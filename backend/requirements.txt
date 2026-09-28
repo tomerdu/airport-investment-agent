@@ -1,0 +1,13 @@
+# Phase 2 — data foundation.
+# Deliberately minimal: the warehouse is built with the stdlib (sqlite3, csv,
+# zipfile, urllib) so the ETL has as few moving parts as possible.
+
+requests==2.32.3        # HTTP with sane retry/session handling
+openpyxl==3.1.5         # FAA enplanement workbooks (.xlsx)
+pytest==8.3.4           # test runner
+
+# Added in later phases (kept here so the stack is visible, commented until used):
+# fastapi==0.115.6
+# uvicorn[standard]==0.34.0
+# anthropic==0.42.0
+# python-dotenv==1.0.1

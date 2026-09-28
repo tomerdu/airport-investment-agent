@@ -1,0 +1,276 @@
+/**
+ * Types mirroring the FastAPI backend contract.
+ *
+ * Everything rendered as a number, table or chart comes from these structured
+ * fields — never from parsing the model's prose. The prose is narration; the
+ * data is the product.
+ */
+
+export interface SourceRecord {
+  dataset: string;
+  source_name: string;
+  source_url: string;
+  license: string | null;
+  coverage: string;
+  retrieved_at: string;
+  rows: number | null;
+  notes: string | null;
+}
+
+export interface ComponentResult {
+  id: string;
+  label: string;
+  raw: number | null;
+  raw_display: string | null;
+  normalized: number | null;
+  percentile: number | null;
+  weight: number;
+  effective_weight: number | null;
+  contribution: number | null;
+  source: string;
+  available: boolean;
+  note: string | null;
+}
+
+export interface IndexResult {
+  index: string;
+  label: string;
+  score: number | null;
+  coverage: number;
+  suppressed_reason: string | null;
+  components: ComponentResult[];
+  cohort_size: number;
+  notes: string[];
+}
+
+export type DivergenceClass =
+  | 'TERMINAL_LED'
+  | 'SYSTEMIC'
+  | 'AIRSIDE_LED'
+  | 'NO_NEAR_TERM_CASE'
+  | 'MIXED'
+  | 'UNCLASSIFIED_AIRSIDE_UNKNOWN'
+  | 'UNCLASSIFIED';
+
+export interface AirportScores {
+  iata: string;
+  name: string;
+  state: string | null;
+  hub_class: string | null;
+  window: string;
+  cohort: string;
+  tdpi: IndexResult;
+  aci: IndexResult;
+  divergence_class: DivergenceClass;
+  divergence_reading: string;
+  sources: SourceRecord[];
+  limitations: string[];
+}
+
+export interface RankedRow extends AirportScores {
+  rank: number | null;
+  unscored_reason?: string | null;
+  scale: {
+    passengers: number | null;
+    departures: number | null;
+    enplanements_cy: number | null;
+    otp_flights: number | null;
+    seats_per_departure: number | null;
+    hub_class: string | null;
+  };
+}
+
+export interface RankResult {
+  index: string;
+  window: string;
+  cohort: string;
+  cohort_size: number;
+  ranked: RankedRow[];
+  unscored: RankedRow[];
+  skipped: { iata: string; reason: string }[];
+  sources: SourceRecord[];
+  limitations: string[];
+}
+
+export interface CompareAirport {
+  iata: string;
+  name: string;
+  state: string | null;
+  hub_class: string | null;
+  runway_count: number | null;
+  longest_runway_ft: number | null;
+  volume: {
+    departures: number | null;
+    passengers: number | null;
+    seats: number | null;
+    otp_flights: number | null;
+  };
+  intensity: {
+    load_factor: number | null;
+    seats_per_departure: number | null;
+    taxi_out_avg_min: number | null;
+    nas_delay_per_flight_min: number | null;
+    dep_del15_rate: number | null;
+    cancel_rate: number | null;
+    dep_delay_avg_min: number | null;
+  };
+  scores: AirportScores | null;
+}
+
+export interface CompareResult {
+  window: string;
+  airports: CompareAirport[];
+  note: string;
+  sources: SourceRecord[];
+  limitations: string[];
+}
+
+export interface LongHaulBand {
+  threshold_sm: number;
+  departures: number;
+  share_pct: number;
+}
+
+export type LongHaulScopeId =
+  | 'all_carriers'
+  | 'passenger'
+  | 'cargo'
+  | 'combi'
+  | 'amphibious';
+
+export interface LongHaulReconciliation {
+  total_departures: number;
+  sum_of_exclusive_scopes: number;
+  residual: number;
+  reconciles: boolean;
+  breakdown: Record<
+    string,
+    { departures: number; share_pct: number; label: string }
+  >;
+  note: string;
+}
+
+export interface LongHaulScope {
+  scope: LongHaulScopeId;
+  scope_label: string;
+  total_departures: number;
+  total_passengers: number;
+  bands: LongHaulBand[];
+  headline_threshold_sm: number;
+  headline_share_pct: number | null;
+}
+
+export interface LongHaulResult {
+  iata: string;
+  name: string;
+  period: string;
+  period_months: number;
+  is_full_window: boolean;
+  definition: string;
+  unit: string;
+  scopes: LongHaulScope[];
+  reconciliation: LongHaulReconciliation;
+  top_destinations: {
+    dest: string;
+    departures: number;
+    distance_sm: number | null;
+    passengers: number;
+    is_long_haul: boolean;
+  }[];
+  sources: SourceRecord[];
+  limitations: string[];
+}
+
+export interface Indicator {
+  id: string;
+  label: string;
+  value: number | null;
+  value_display: string | null;
+  threshold_display: string;
+  triggered: boolean | null;
+  available: boolean;
+  direction: string;
+  source: string;
+  unavailable_reason: string | null;
+}
+
+export interface UnmetDemandResult {
+  iata: string;
+  name: string;
+  window: string;
+  indicators: Indicator[];
+  triggered_count: number;
+  available_count: number;
+  total_count: number;
+  evidence_band: 'Weak' | 'Moderate' | 'Strong' | 'Indeterminate';
+  caveat: string;
+  sources: SourceRecord[];
+  limitations: string[];
+}
+
+export interface AirportProfileResult {
+  window: string;
+  airport: {
+    iata: string;
+    name: string;
+    city: string | null;
+    state: string | null;
+    hub_class: string | null;
+    runway_count: number | null;
+    longest_runway_ft: number | null;
+  };
+  traffic: Record<string, number | null>;
+  delay: Record<string, number | null>;
+  scores: AirportScores;
+  sources: SourceRecord[];
+  limitations: string[];
+}
+
+export interface ToolCall {
+  name: string;
+  input: Record<string, unknown>;
+  ok: boolean;
+  error: string | null;
+  duration_ms: number;
+  result: unknown;
+}
+
+export interface AgentReply {
+  answer: string;
+  session_id: string;
+  window: string;
+  tool_calls: ToolCall[];
+  sources: SourceRecord[];
+  limitations: string[];
+  assumptions: string[];
+  focus_airports: string[];
+  scores: AirportScores[];
+  audit: {
+    passed: boolean;
+    numerals_checked: number;
+    unmatched: string[];
+    summary: string;
+  };
+  usage: { input_tokens?: number; output_tokens?: number };
+  stop_reason: string | null;
+  degraded: boolean;
+}
+
+export interface HealthResponse {
+  status: string;
+  window: string;
+  airports: number;
+  cohort_size: number;
+  aci_eligible: number;
+  llm_configured: boolean;
+  model: string;
+  active_sessions: number;
+}
+
+export interface ChatTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  reply?: AgentReply;
+  error?: string;
+}

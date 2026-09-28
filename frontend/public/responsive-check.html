@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Responsive check</title>
+    <style>
+      /*
+       * Dev-only harness for verifying the app's breakpoints.
+       *
+       * The browser-automation tooling could not reliably change the rendering
+       * viewport, so the app is embedded in fixed-width iframes instead. CSS
+       * media queries evaluate against the iframe's own viewport, so this is a
+       * genuine test of the 980px and 560px breakpoints rather than a
+       * simulation.
+       */
+      body {
+        margin: 0;
+        padding: 12px;
+        background: #22231f;
+        font: 12px system-ui, sans-serif;
+        color: #eee;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      figure { margin: 0; }
+      figcaption {
+        margin-bottom: 6px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      iframe {
+        border: 1px solid #555;
+        border-radius: 8px;
+        background: #fff;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <figcaption>Mobile — 390 × 780</figcaption>
+      <iframe src="/" width="390" height="780" title="mobile"></iframe>
+    </figure>
+    <figure>
+      <figcaption>Narrow laptop — 900 × 780</figcaption>
+      <iframe src="/" width="900" height="780" title="narrow laptop"></iframe>
+    </figure>
+  </body>
+</html>

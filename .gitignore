@@ -1,0 +1,45 @@
+# Secrets — never commit credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Raw source data (large, re-fetchable via the ETL scripts).
+# The built warehouse IS committed — it is the offline fallback and every
+# primary source is public domain.
+data/raw/
+
+# SQLite write-ahead sidecars. Transient, recreated on demand; committing them
+# would ship a partial write.
+*.db-wal
+*.db-shm
+
+# The original Deloitte assignment brief — their document, not ours to publish.
+FDE Exam*.pdf
+
+# Vite scaffold leftovers: unreferenced by any source file. Kept on disk so
+# `npm create vite` output stays intact, but not part of the deliverable.
+frontend/src/assets/
+frontend/README.md
+
+# Build output of the submission packager (lives outside the repo, but guard
+# against it being run with a different -OutDir).
+submission/
+
+# OS
+Thumbs.db
+.DS_Store
