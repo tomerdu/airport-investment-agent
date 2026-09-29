@@ -19,7 +19,11 @@ import json
 from typing import Any, Callable
 
 from app.analytics import AnalyticsEngine
-from app.analytics.definitions import LONG_HAUL_THRESHOLDS_SM
+from app.analytics.definitions import (
+    LONG_HAUL_THRESHOLDS_SM,
+    UDEI_BRIEF_DIRECTIONS,
+    UDEI_BRIEF_LIMITS,
+)
 from app.analytics.resolve import resolve as resolve_airport
 
 # --------------------------------------------------------------------------
@@ -444,18 +448,68 @@ class ToolBox:
                 }
 
         elif name == "unmet_demand_evidence":
+            # The model needs the outcomes, the counts, and the limits that
+            # change what it may claim. It does NOT need five paragraphs of
+            # per-indicator caveats: those are identical on every call, so they
+            # belong once in the system prompt and in full in the panel, which
+            # is where the evidence table is actually read.
+            #
+            # Phase 8.3 final reduced this view from ~7.6 KB to well under 2 KB
+            # by replacing the repeated paragraphs with one shared `limits`
+            # block of one-line statements, and by dropping fields the panel
+            # renders (full `direction`, `cannot_establish`, per-row `source`).
             r["indicators"] = [
                 {
-                    "id": i.get("id"), "label": i.get("label"),
+                    "id": i.get("id"),
+                    "label": i.get("label"),
                     "value": i.get("value_display"),
                     "threshold": i.get("threshold_display"),
                     "triggered": i.get("triggered"),
-                    "available": i.get("available"),
+                    "evidence": UDEI_BRIEF_DIRECTIONS.get(
+                        i.get("id"), i.get("direction")),
                     **({"unavailable_reason": i["unavailable_reason"]}
                        if not i.get("available") else {}),
                 }
                 for i in result.get("indicators", [])
             ]
+            r["counts"] = {
+                "band": result.get("evidence_band"),
+                "triggered": result.get("triggered_count"),
+                "available": result.get("available_count"),
+                "unavailable": result.get("unavailable_count"),
+                "defined": result.get("total_count"),
+                "max_attainable_triggered": result.get("max_attainable_triggered"),
+                "max_attainable_band": result.get("max_attainable_band"),
+            }
+            # One shared limitations block instead of per-indicator repetition.
+            # Read from the module constant, not from the payload, so the
+            # frontend response carries no model-view scaffolding.
+            limits = dict(UDEI_BRIEF_LIMITS)
+            if not result.get("weak_is_not_absence"):
+                limits.pop("weak_is_not_absence", None)
+            r["limits"] = limits
+            ctx = result.get("cohort_context")
+            if ctx:
+                r["cohort"] = {
+                    "size": ctx.get("cohort_size"),
+                    "bands": ctx.get("band_counts"),
+                    "note": "calibration only; not evidence about this airport",
+                }
+            r["detail"] = (
+                "Full per-indicator wording, thresholds, sources and limits are "
+                "in the evidence panel. Quote the figures your reading rests on; "
+                "do not retype the table."
+            )
+            # Everything below is either now inside the blocks above or is
+            # frontend-only detail. Carrying it twice would undo the saving.
+            for dup in ("band_definition", "band_comparability_note",
+                        "max_attainable_triggered", "max_attainable_band",
+                        "unavailable_count", "unavailable_reasons",
+                        "indicator_relationships", "cohort_context",
+                        "brief_limits", "weak_is_not_absence",
+                        "evidence_band", "triggered_count", "available_count",
+                        "total_count", "caveat"):
+                r.pop(dup, None)
 
         return r
 

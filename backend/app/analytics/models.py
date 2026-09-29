@@ -111,12 +111,26 @@ class Indicator:
     threshold_display: str
     triggered: bool | None           # None = could not be evaluated
     available: bool
-    direction: str                   # what a trigger would be consistent with
+    # What a trigger is CONSISTENT WITH. Never a cause: an observed pattern
+    # cannot establish why it occurred (Phase 8.3b).
+    direction: str
     source: str
     unavailable_reason: str | None = None
+    # What this indicator cannot establish even when it fires. Added in Phase
+    # 8.3b so the limit travels with the indicator instead of living only in a
+    # report. Defaulted, so older constructors still work.
+    cannot_establish: str = ""
+    # How the trigger threshold is constructed and where it is not comparable.
+    # Separate from `cannot_establish` so each field says one thing.
+    threshold_note: str = ""
+    # Measured on the same underlying quantities as these other indicators, so
+    # they are not independent confirmations of each other.
+    shares_arithmetic_with: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["shares_arithmetic_with"] = list(self.shares_arithmetic_with)
+        return d
 
 
 @dataclass(frozen=True)
@@ -139,6 +153,32 @@ class UnmetDemandEvidence:
     caveat: str
     sources: list[dict[str, Any]]
     limitations: list[str]
+    # --- Phase 8.3b transparency fields. All defaulted and additive; the band
+    # --- and its thresholds are unchanged, only disclosed more fully.
+    #
+    # How many indicators could not be evaluated, and why. Previously derivable
+    # from `indicators` but never stated outright.
+    unavailable_count: int = 0
+    unavailable_reasons: list[dict[str, str]] = field(default_factory=list)
+    # The highest trigger count this airport could reach given its data
+    # coverage. Equals `available_count`. Stated because the band uses ABSOLUTE
+    # counts, so an airport with fewer available indicators cannot reach the
+    # higher bands however strong its evidence.
+    max_attainable_triggered: int = 0
+    max_attainable_band: str = ""
+    # Plain statement of what the band is and where it is not comparable.
+    band_definition: str = ""
+    band_comparability_note: str = ""
+    # Arithmetic relationships between indicators, so a reader does not count
+    # two views of one quantity as two independent findings.
+    indicator_relationships: list[str] = field(default_factory=list)
+    # Optional cohort frequencies, for calibrating what a band means. Never
+    # evidence about this airport.
+    cohort_context: dict[str, Any] | None = None
+    # Set only on a Weak or Indeterminate band: a reminder that the indicators
+    # failing to converge is not proof the quantity is absent. Rendered by the
+    # panel, so it belongs on the result rather than in the model view alone.
+    weak_is_not_absence: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

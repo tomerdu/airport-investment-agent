@@ -429,6 +429,104 @@ UDEI_UPGAUGE_THRESHOLD = 0.02        # +2% YoY seats/departure
 UDEI_COHORT_PERCENTILE = 75.0        # "high" = at or above cohort P75
 
 # ---------------------------------------------------------------------------
+# UDEI transparency text (Phase 8.3b).
+#
+# The band and its thresholds are UNCHANGED. What changed is that the band's
+# construction and its known comparability limit are now stated wherever the
+# band is shown, instead of being derivable only by reading the code.
+# ---------------------------------------------------------------------------
+
+UDEI_BAND_DEFINITION = (
+    "The band counts how many indicators fired, on absolute counts: 0-1 Weak, "
+    "2-3 Moderate, 4 or more Strong. Fewer than two evaluable indicators yields "
+    "Indeterminate. It is a count of convergent signals, not a score, and it is "
+    "not weighted."
+)
+
+UDEI_BAND_COMPARABILITY_NOTE = (
+    "Because the band uses ABSOLUTE trigger counts while the number of "
+    "evaluable indicators varies by airport, bands are not fully comparable "
+    "across airports. U4 requires a computable ACI (suppressed below 1,000 "
+    "on-time-reported flights) and U5 is unavailable everywhere, so an airport "
+    "with three evaluable indicators cannot reach Strong however strong its "
+    "evidence, while one with four can. Read the triggered count against the "
+    "attainable maximum, not the band alone."
+)
+
+# U2 reads frequency growth, U3 reads gauge growth, U1 reads the level of load
+# factor. Passenger growth decomposes exactly into those three terms, so they
+# are related views of one quantity rather than independent confirmations.
+UDEI_ARITHMETIC_NOTE = (
+    "Passenger growth decomposes exactly: (1 + passenger growth) = "
+    "(1 + departure growth) x (1 + seats-per-departure growth) x "
+    "(1 + load-factor growth). U2 reads the first term, U3 the second, and U1 "
+    "the level of the third. They are therefore RELATED VIEWS of one "
+    "decomposition, not independent confirmations of each other: if passengers "
+    "rise while departures do not, then gauge or load factor must have risen, "
+    "as a matter of arithmetic rather than evidence."
+)
+
+# Absence of evidence is not evidence of absence. A Weak band means the
+# observable indicators did not converge; it does not mean demand is being met.
+UDEI_WEAK_IS_NOT_ABSENCE = (
+    "A Weak band means the observable indicators did not converge. It is NOT "
+    "proof that unmet demand does not exist: the indicators are proxies, U5 is "
+    "missing everywhere, and the quantity itself is unobservable in this data. "
+    "Absence of evidence is not evidence of absence."
+)
+
+# One-line evidence phrase per indicator, for the model view. The full
+# `direction` wording stays on the indicator for the panel. Kept here rather
+# than on the payload so the frontend response carries no model-view scaffolding.
+UDEI_BRIEF_DIRECTIONS = {
+    "U1": "consistent with little slack in seats offered",
+    "U2": "consistent with passengers absorbed without adding flights",
+    "U3": "consistent with capacity added as larger aircraft, not more flights",
+    "U4": "consistent with high observed delay and queuing versus peers",
+    "U5": "would be consistent with supply-constrained pricing; not evaluated",
+}
+
+# One-line forms of the limitations, for the model view. The full paragraphs
+# stay in the frontend payload, which is where the evidence table is read.
+UDEI_BRIEF_LIMITS = {
+    "band": (
+        "Absolute trigger counts (0-1 Weak, 2-3 Moderate, 4+ Strong), so bands "
+        "are not comparable across airports with different indicator "
+        "availability. Compare triggered against max_attainable."
+    ),
+    "u1_threshold": (
+        "U1's bar is the cohort-wide P75; load factor varies by hub class, so "
+        "large hubs clear it ~67% of the time against ~25% cohort-wide."
+    ),
+    "u2_u3_dependence": (
+        "Passenger growth = departures x gauge x load factor, so U1/U2/U3 are "
+        "related terms of one decomposition, not independent confirmations."
+    ),
+    "u3_threshold": "U3's +2% bar is a judgement constant, not derived.",
+    "u4_threshold": "U4's bar is the cohort P75, an upper-quartile flag.",
+    "causation": (
+        "A fired indicator is consistent with constrained service; it cannot "
+        "establish a cause. Fleet strategy, network changes and weather produce "
+        "the same patterns."
+    ),
+    "quantification": (
+        "No magnitude of unmet passengers or flights exists in this data and "
+        "none is produced. Never state or imply one."
+    ),
+    "weak_is_not_absence": UDEI_WEAK_IS_NOT_ABSENCE,
+}
+
+UDEI_U1_COMPARABILITY_NOTE = (
+    "U1's threshold is the percentile of the WHOLE cohort, which is dominated "
+    "by small airports with lower load factors. Load factor varies "
+    "systematically by hub class, so the same bar is easier for a large hub to "
+    "clear: measured on the current window, large hubs trigger U1 about 67% of "
+    "the time against roughly 25% cohort-wide. A trigger therefore means 'high "
+    "relative to all US primary airports', not 'high for an airport of this "
+    "size'."
+)
+
+# ---------------------------------------------------------------------------
 # Global limitations, surfaced on every result
 # ---------------------------------------------------------------------------
 

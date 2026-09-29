@@ -489,6 +489,20 @@ abbr.term {
 .indicator.off .lbl, .indicator.off .val { color: var(--text-secondary); }
 .indicator.na .lbl, .indicator.na .val { color: var(--text-muted); font-style: italic; }
 
+/* Phase 8.3b: each indicator now carries what it is consistent with, what it
+   cannot establish, how its threshold is built, and its provenance. Several
+   stacked lines per row, so give them hierarchy rather than a wall of text. */
+.indicator .thr { display: block; margin-top: 3px; line-height: 1.45; }
+.indicator .thr:first-of-type { margin-top: 1px; }
+.indicator .thr b {
+  font-weight: 650;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+.indicator .thr.muted { color: var(--axis); }
+/* The limit on an indicator matters most when the indicator actually fired. */
+.indicator:not(.off):not(.na) .thr b { color: var(--text-primary); }
+
 .band {
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 12px; font-weight: 650;

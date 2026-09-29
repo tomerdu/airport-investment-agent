@@ -390,6 +390,51 @@ of the field is the control.
 Band by triggered count: 0–1 Weak, 2–3 Moderate, 4+ Strong. An indicator without
 data is reported **unavailable with a reason**, never assumed false.
 
+#### What each indicator carries, and what it disclaims
+
+Every indicator ships four things beyond its value: what a trigger is
+**consistent with**, what it **cannot establish**, how its **threshold** is
+constructed, and its **provenance**. All four reach the model and the panel. The
+`direction` text is deliberately phrased as consistency, never causation — an
+earlier wording called U3 "a classic slot/gate-constrained signature", which
+asserts a cause a seats-per-departure ratio cannot support.
+
+**U2 and U3 are not independent evidence.** Passenger growth decomposes exactly:
+
+```
+(1 + pax growth) = (1 + departure growth) × (1 + gauge growth) × (1 + LF growth)
+```
+
+U2 reads the first term, U3 the second, U1 the level of the third. Each indicator
+declares its `shares_arithmetic_with` peers, and the identity is stated on the
+result, so two of them firing is not two independent findings.
+
+#### The band's known comparability limit
+
+The band uses **absolute** trigger counts while the number of *evaluable*
+indicators varies: U4 needs a computable ACI and U5 is unavailable everywhere.
+So an airport with three evaluable indicators cannot reach Strong however strong
+its evidence, while one with four can — and 3-of-3 bands as Moderate while
+4-of-4 bands as Strong, though both are everything that could be measured.
+
+**The classification is preserved for compatibility; the limit is disclosed
+rather than patched.** Every result now carries `available_count`,
+`unavailable_count` with reasons, `max_attainable_triggered` and
+`max_attainable_band`, plus the band definition and the comparability note. The
+panel and the prompt both require the counts to appear with the label, never the
+label alone.
+
+`cohort_context` adds band frequencies (measured: 328 Weak, 70 Moderate, 1
+Strong of 399) so a band can be calibrated. It carries an explicit note that
+cohort frequencies are **not** evidence about any particular airport, and that a
+rare band is not a stronger finding for the airport holding it.
+
+U1's threshold is the percentile of the whole cohort, which is dominated by small
+airports; load factor varies by hub class, so large hubs clear it about 67% of the
+time against ~25% cohort-wide. That is disclosed in U1's `threshold_note`, with an
+optional, clearly labelled within-class rank (SFO: 2nd of 30 large hubs) and
+instructions to reproduce it. The trigger itself is unchanged.
+
 ### Missing data
 
 1. **Never impute.** No mean-filling, carry-forward or regression fill.
@@ -461,7 +506,17 @@ originating tool result already gone.
 
 ## 8. Agent tools and orchestration
 
-Six tools, each a thin wrapper over the engine. None computes anything.
+Six tools, each a thin wrapper over the engine. **None computes an analytical
+value** — every score, rate, growth figure and classification originates in
+`app/analytics` and is passed through unchanged.
+
+The tool layer does perform *presentation* work, and it is worth being precise
+about the difference. `ToolBox.compact_for_model` (`tools.py:356`) rounds index
+scores to one decimal and minutes to two for the model view, and assembles the
+UDEI `evidence` and `limits` blocks from constants in `definitions.py`. Those are
+formatting and disclosure decisions, not analysis: the full-precision values go
+to the frontend unchanged, and a test asserts the engine's own figure is
+untouched.
 
 | Tool | Returns |
 |---|---|

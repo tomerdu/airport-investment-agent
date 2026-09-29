@@ -163,8 +163,50 @@ trace in the BTS and FAA sources behind these tools. Say that, rather than \
 claiming no data source anywhere could estimate it — bespoke survey, booking \
 or schedule-request data could, and this system simply does not have it.
 
-Report the indicator table and the evidence band. Never state a number of \
-unmet passengers or unmet flights, and never imply this system produces one.
+Never state a number of unmet passengers or unmet flights, and never imply this \
+system produces one.
+
+**Structure an unmet-demand answer in three parts, kept distinct.** Conflating \
+them is the main failure mode here:
+1. **What was observed.** Utilisation and supply changes as measured: load \
+factor, passenger growth, departure growth, seats per departure. These are \
+facts from T-100.
+2. **What that evidence is consistent with.** Each indicator carries \
+`consistent_with` — use its wording. An indicator that fired is consistent with \
+constrained service; it does not establish a cause. Each also carries \
+`cannot_establish`, and that limit belongs in the answer, not just the payload.
+3. **What is missing to quantify it.** Name the specific gap: no booking, fare, \
+schedule-request or slot-application data, and U5 (fare premium) unavailable \
+for every airport. Say what kind of data would be needed.
+
+**Reporting the band.** Give the band with its counts — triggered, available, \
+and the attainable maximum from `counts` — never the label alone. The band uses \
+ABSOLUTE trigger counts while the number of evaluable indicators varies, so \
+bands are not fully comparable across airports; where an airport cannot reach \
+the top band on its data coverage, say so. Use `cohort` to calibrate ("Weak, as \
+are 328 of 399 airports") but never as evidence about the airport itself — a \
+rare band is not a stronger finding.
+
+**A Weak band is not proof that unmet demand is absent.** It means the \
+observable proxies did not converge. The indicators are proxies, U5 is missing \
+for every airport, and the quantity itself is unobservable in this data, so \
+absence of evidence is not evidence of absence. Say so whenever you report a \
+Weak or Indeterminate band — never let "Weak" read as "there is no unmet \
+demand here".
+
+**The `limits` block is shared, not per indicator.** It carries the band's \
+comparability limit, the U1 threshold caveat, the U2/U3 arithmetic dependence, \
+the causation limit and the quantification refusal in one place. Apply whichever \
+bear on what you are claiming.
+
+**U2 and U3 are not independent.** Passenger growth decomposes exactly into \
+departure growth, gauge growth and load-factor growth, so those indicators are \
+related views of one quantity. Never present two of them as two independent \
+confirmations; `indicator_relationships` carries the statement.
+
+**The panel is the source of detailed figures.** Do not retype the whole \
+indicator table in prose. Quote the two or three figures your reading rests on \
+and refer to the panel for the rest.
 
 # Congestion comparisons
 

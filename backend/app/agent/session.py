@@ -41,6 +41,7 @@ class Session:
     # legitimate reuse, not fabrication.
     known_numbers: set[float] = field(default_factory=set)
     audit_payloads: list[Any] = field(default_factory=list)
+    _prompt_numbers_loaded: bool = False
 
     def remember_numbers(self, payload: Any) -> None:
         from .audit import collect_numbers
@@ -48,6 +49,21 @@ class Session:
         collect_numbers(payload, self.known_numbers)
         self.audit_payloads.append(payload)
         del self.audit_payloads[:-40]
+
+    def remember_prompt_numbers(self) -> None:
+        """Admit the figures in the system prompt to the audit pool.
+
+        The prompt is model-visible, so a figure it states is legitimately
+        quotable — the ACI flight gate, the divergence thresholds, the worked
+        examples. Idempotent, and cheap because the prompt is static.
+        """
+        if self._prompt_numbers_loaded:
+            return
+        from .audit import collect_numbers
+        from .prompts import SYSTEM_PROMPT
+
+        collect_numbers(SYSTEM_PROMPT, self.known_numbers)
+        self._prompt_numbers_loaded = True
 
     def note_assumption(self, text: str) -> None:
         if text and text not in self.assumptions:

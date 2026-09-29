@@ -51,38 +51,28 @@ class _ApiFailure(Exception):
         self.decision = decision
 
 
-def _auditable(payload: Any) -> Any:
-    """A tool result with the model-invisible parts removed, for the numeric audit.
+def _auditable(toolbox: ToolBox, name: str, result: Any) -> Any:
+    """The MODEL-VISIBLE projection of a tool result, for the numeric audit.
 
-    The audit accepts any figure reachable in a remembered payload. The ACI
-    temporal diagnostic's monthly series is deliberately withheld from the model
-    (the panel renders it), so admitting its ~90 values per profile would widen
-    the pool of "provenanced" numbers by about 40% without the model ever having
-    been shown them. Everything the model *is* shown is summarised in the compact
-    view and stays auditable; only the withheld series is dropped.
+    The audit accepts any figure reachable in a remembered payload, so the pool
+    must be exactly what the model could have read — no more. That is the compact
+    view, by definition.
 
-    The full payload still reaches the frontend unchanged — this affects the
+    Phase 8.2b approximated this by subtracting the one known-hidden field (the
+    ACI monthly series). Phase 8.3 makes it exact: as the frontend payload grew
+    richer than the model view, subtracting named fields stopped being reliable,
+    and a hidden figure that happens to match an invented one would silently
+    "provenance" it. Deriving the pool from `compact_for_model` cannot drift,
+    because it is the same function that builds what the model sees.
+
+    The full payload still reaches the frontend unchanged; this affects the
     audit's number pool only.
     """
-    if not isinstance(payload, dict):
-        return payload
-
-    def strip(scores: Any) -> Any:
-        t = scores.get("temporal") if isinstance(scores, dict) else None
-        if not isinstance(t, dict) or "months" not in t:
-            return scores
-        return {**scores, "temporal": {k: v for k, v in t.items() if k != "months"}}
-
-    out = dict(payload)
-    if isinstance(out.get("scores"), dict):
-        out["scores"] = strip(out["scores"])
-    if isinstance(out.get("airports"), list):
-        out["airports"] = [
-            {**a, "scores": strip(a["scores"])}
-            if isinstance(a, dict) and isinstance(a.get("scores"), dict) else a
-            for a in out["airports"]
-        ]
-    return out
+    try:
+        return toolbox.compact_for_model(name, result)
+    except Exception:            # pragma: no cover - never block a turn on this
+        log.warning("compact projection failed for %s; auditing full payload", name)
+        return result
 
 
 @dataclass
@@ -152,9 +142,15 @@ class Orchestrator:
         store: SessionStore | None = None,
         model: str | None = None,
     ) -> None:
-        self.engine = engine or AnalyticsEngine()
+        # `is not None`, NOT `or`: SessionStore defines __len__, so an EMPTY
+        # store is falsy and `store or SessionStore()` silently discarded the
+        # one the caller passed. main.py builds a store and hands it over, so
+        # the app ended up with two — `/health.active_sessions` always read 0,
+        # and GET/DELETE /sessions/{id} operated on a store that never received
+        # a session. Found by the session-isolation tests in Phase 8.4.
+        self.engine = engine if engine is not None else AnalyticsEngine()
         self.toolbox = ToolBox(self.engine)
-        self.store = store or SessionStore()
+        self.store = store if store is not None else SessionStore()
         self.model = model or config.MODEL
         self._client = client
         # Built once. Static across the whole process, so it sits inside the
@@ -389,8 +385,14 @@ class Orchestrator:
 
         scores = self._harvest(session, calls)
         payloads = [c.result for c in calls if c.ok]
-        for payload in payloads:
-            session.remember_numbers(_auditable(payload))
+        # The audit pool is what the MODEL saw: the static system prompt plus the
+        # compact projection of each tool result, plus the user's own figures.
+        session.remember_prompt_numbers()
+        for call in calls:
+            if call.ok:
+                session.remember_numbers(
+                    _auditable(self.toolbox, call.name, call.result)
+                )
 
         # Audited against the whole session, not just this turn: follow-ups
         # legitimately re-quote figures fetched earlier.

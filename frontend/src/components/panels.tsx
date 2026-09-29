@@ -1024,10 +1024,67 @@ export function UnmetDemandPanel({ data }: { data: UnmetDemandResult }) {
           Evidence: {data.evidence_band}
         </span>
         <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
-          {data.triggered_count} of {data.available_count} evaluable indicators
-          triggered ({data.total_count} defined)
+          <b>
+            {data.triggered_count} of {data.available_count}
+          </b>{' '}
+          evaluable indicators triggered · {data.total_count} defined
+          {data.unavailable_count ? (
+            <> · {data.unavailable_count} unavailable</>
+          ) : null}
         </span>
       </div>
+
+      {/* The band uses absolute counts, so the attainable ceiling matters as
+          much as the count itself. Stated here rather than left implicit. */}
+      {data.max_attainable_triggered !== undefined && (
+        <div className="note">
+          <b>
+            Highest count reachable on this airport&apos;s data coverage:{' '}
+            {data.max_attainable_triggered} of {data.total_count}
+            {data.max_attainable_band ? ` (${data.max_attainable_band})` : ''}
+          </b>
+          {data.band_definition ? <> {data.band_definition}</> : null}
+          {data.band_comparability_note ? (
+            <>
+              {' '}
+              {data.band_comparability_note}
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {/* A Weak band must not read as "no unmet demand here". */}
+      {data.weak_is_not_absence && (
+        <div className="note caution">
+          <b>Weak evidence is not proof of absence.</b>{' '}
+          {data.weak_is_not_absence}
+        </div>
+      )}
+
+      {data.unavailable_reasons && data.unavailable_reasons.length > 0 && (
+        <div className="note caution">
+          <b>Indicators that could not be evaluated</b>
+          <ul>
+            {data.unavailable_reasons.map((u) => (
+              <li key={u.id}>
+                <b>
+                  {u.id} — {u.label}:
+                </b>{' '}
+                {u.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {data.indicator_relationships && data.indicator_relationships.length > 0 && (
+        <div className="note">
+          <b>These indicators are not all independent.</b>
+          {data.indicator_relationships.map((t, n) => (
+            <span key={n}> {t}</span>
+          ))}
+        </div>
+      )}
 
       {data.indicators.map((i) => (
         <div
@@ -1040,6 +1097,12 @@ export function UnmetDemandPanel({ data }: { data: UnmetDemandResult }) {
           <span>
             <span className="lbl">
               {i.id} — {i.label}
+              {i.shares_arithmetic_with && i.shares_arithmetic_with.length > 0 && (
+                <span className="muted small">
+                  {' '}
+                  · shares arithmetic with {i.shares_arithmetic_with.join(', ')}
+                </span>
+              )}
             </span>
             <br />
             <span className="thr">
@@ -1047,10 +1110,51 @@ export function UnmetDemandPanel({ data }: { data: UnmetDemandResult }) {
                 ? `Trigger: ${i.threshold_display} · ${i.triggered ? 'TRIGGERED' : 'not triggered'}`
                 : `Unavailable — ${i.unavailable_reason}`}
             </span>
+            {i.direction && (
+              <>
+                <br />
+                <span className="thr">
+                  <b>Consistent with:</b> {i.direction}
+                </span>
+              </>
+            )}
+            {i.cannot_establish && (
+              <>
+                <br />
+                <span className="thr">
+                  <b>Cannot establish:</b> {i.cannot_establish}
+                </span>
+              </>
+            )}
+            {i.threshold_note && (
+              <>
+                <br />
+                <span className="thr muted">
+                  <b>About the threshold:</b> {i.threshold_note}
+                </span>
+              </>
+            )}
+            <br />
+            <span className="thr muted small">Source: {i.source}</span>
           </span>
           <span className="val">{i.value_display ?? 'n/a'}</span>
         </div>
       ))}
+
+      {data.cohort_context && (
+        <div className="note">
+          <b>Cohort context.</b> Across {data.cohort_context.cohort_size} airports:{' '}
+          {Object.entries(data.cohort_context.band_counts)
+            .map(([b, n]) => `${b} ${n}`)
+            .join(' · ')}
+          . By highest count reachable:{' '}
+          {Object.entries(data.cohort_context.airports_by_attainable_maximum)
+            .sort((a, b) => Number(b[0]) - Number(a[0]))
+            .map(([k, n]) => `${k} indicators: ${n} airports`)
+            .join(' · ')}
+          . <i>{data.cohort_context.note}</i>
+        </div>
+      )}
     </Card>
   );
 }

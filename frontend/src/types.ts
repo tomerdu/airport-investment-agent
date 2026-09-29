@@ -268,9 +268,29 @@ export interface Indicator {
   threshold_display: string;
   triggered: boolean | null;
   available: boolean;
+  /** What a trigger is CONSISTENT WITH — never a cause. */
   direction: string;
   source: string;
   unavailable_reason: string | null;
+  /** What this indicator cannot establish even when it fires. */
+  cannot_establish?: string;
+  /** How the threshold is built and where it is not comparable. */
+  threshold_note?: string;
+  /** Indicators measured on the same underlying quantities as this one. */
+  shares_arithmetic_with?: string[];
+}
+
+export type EvidenceBand = 'Weak' | 'Moderate' | 'Strong' | 'Indeterminate';
+
+/** Cohort frequencies, for calibrating what a band means.
+ *  Never evidence about a particular airport. */
+export interface UdeiCohortContext {
+  cohort_size: number;
+  band_counts: Record<string, number>;
+  indicator_available_counts?: Record<string, number>;
+  indicator_triggered_counts?: Record<string, number>;
+  airports_by_attainable_maximum: Record<string, number>;
+  note: string;
 }
 
 export interface UnmetDemandResult {
@@ -281,10 +301,26 @@ export interface UnmetDemandResult {
   triggered_count: number;
   available_count: number;
   total_count: number;
-  evidence_band: 'Weak' | 'Moderate' | 'Strong' | 'Indeterminate';
+  evidence_band: EvidenceBand;
   caveat: string;
   sources: SourceRecord[];
   limitations: string[];
+  /** Phase 8.3b transparency fields. Optional and additive. */
+  unavailable_count?: number;
+  unavailable_reasons?: { id: string; label: string; reason: string }[];
+  /** Highest trigger count reachable on this airport's data coverage. */
+  max_attainable_triggered?: number;
+  max_attainable_band?: string;
+  band_definition?: string;
+  band_comparability_note?: string;
+  indicator_relationships?: string[];
+  cohort_context?: UdeiCohortContext | null;
+  /** Set only on a Weak or Indeterminate band: absence of evidence is not
+   *  evidence of absence. */
+  weak_is_not_absence?: string;
+  /** One-line forms of the limitations, used by the compact model view. The
+   *  panel renders the full paragraphs above instead. */
+  brief_limits?: Record<string, string>;
 }
 
 export interface AirportProfileResult {

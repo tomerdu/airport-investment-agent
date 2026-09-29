@@ -76,6 +76,8 @@ class AnalyticsEngine:
         self._sources: list[dict[str, Any]] | None = None
         # Monthly OTP rows for the ACI temporal diagnostic; loaded on demand.
         self._monthly_delay: dict[str, list[MonthlyDelay]] | None = None
+        # UDEI cohort band/indicator frequencies; computed on first use.
+        self._udei_context: dict[str, Any] | None = None
 
     # -- infrastructure ----------------------------------------------------
 
@@ -362,10 +364,55 @@ class AnalyticsEngine:
                 sources=self.sources(), **kwargs,
             )
 
+    def _udei_cohort_context(self) -> dict[str, Any]:
+        """How often each band and each indicator occurs across the cohort.
+
+        Calibration only: a band means little without knowing whether it is
+        common or rare. Computed once and cached, because it evaluates UDEI for
+        every cohort member.
+
+        This is context for reading the BAND. It is never evidence about any
+        particular airport, and a carried note says so where it is displayed.
+        """
+        if self._udei_context is None:
+            cohort = self.cohort()
+            bands: dict[str, int] = {}
+            fired: dict[str, int] = {}
+            avail: dict[str, int] = {}
+            attainable: dict[str, int] = {}
+            for member in cohort.members:
+                ev = unmet_demand_evidence(
+                    member, cohort, window=self.window
+                )
+                bands[ev.evidence_band] = bands.get(ev.evidence_band, 0) + 1
+                key = str(ev.max_attainable_triggered)
+                attainable[key] = attainable.get(key, 0) + 1
+                for ind in ev.indicators:
+                    if ind.available:
+                        avail[ind.id] = avail.get(ind.id, 0) + 1
+                        if ind.triggered:
+                            fired[ind.id] = fired.get(ind.id, 0) + 1
+            self._udei_context = {
+                "cohort_size": len(cohort.members),
+                "band_counts": bands,
+                "indicator_available_counts": avail,
+                "indicator_triggered_counts": fired,
+                "airports_by_attainable_maximum": attainable,
+                "note": (
+                    "Cohort frequencies are provided so a band can be calibrated "
+                    "— whether it is common or unusual. They are NOT evidence "
+                    "that any particular airport does or does not have unmet "
+                    "demand, and a rare band is not a stronger finding for the "
+                    "airport that holds it."
+                ),
+            }
+        return self._udei_context
+
     def unmet_demand(self, iata: str) -> UnmetDemandEvidence | None:
         m = self.get_metrics(iata)
         if m is None:
             return None
         return unmet_demand_evidence(
-            m, self.cohort(), window=self.window, sources=self.sources()
+            m, self.cohort(), window=self.window, sources=self.sources(),
+            cohort_context=self._udei_cohort_context(),
         )

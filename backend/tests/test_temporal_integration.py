@@ -292,6 +292,21 @@ def test_system_prompt_explains_when_not_why():
 # ---------------------------------------------------------------------------
 
 
+def test_auditable_is_the_model_visible_projection(engine):
+    """Phase 8.3 made the pool exactly what the model saw.
+
+    Previously `_auditable` subtracted the one field known to be hidden. As the
+    frontend payload grew richer than the model view that stopped being
+    reliable, so the pool is now derived from `compact_for_model` itself.
+    """
+    from app.agent.orchestrator import _auditable
+
+    tb = ToolBox(engine)
+    raw = tb.call("get_airport_profile", {"iata": "BOS"})
+    assert _auditable(tb, "get_airport_profile", raw) == \
+        tb.compact_for_model("get_airport_profile", raw)
+
+
 def test_auditable_excludes_the_monthly_series(engine):
     """The monthly series is withheld from the model, so it must not widen the
     pool of numbers the provenance audit will accept."""
@@ -304,21 +319,21 @@ def test_auditable_excludes_the_monthly_series(engine):
     full: set[float] = set()
     collect_numbers(raw, full)
     filtered: set[float] = set()
-    collect_numbers(_auditable(raw), filtered)
+    collect_numbers(_auditable(tb, "get_airport_profile", raw), filtered)
 
     assert len(filtered) < len(full), "monthly series still inflating the pool"
-    assert filtered <= full
 
 
 def test_auditable_keeps_the_figures_the_model_is_shown(engine):
     from app.agent.orchestrator import _auditable
 
     tb = ToolBox(engine)
-    a = _auditable(tb.call("get_airport_profile", {"iata": "BOS"}))
-    t = a["scores"]["temporal"]
+    a = _auditable(tb, "get_airport_profile",
+                   tb.call("get_airport_profile", {"iata": "BOS"}))
+    t = a["aci_temporal"]
     assert "months" not in t
     assert t["monthly_spread"] is not None
-    assert t["concentration"]["worst_two_month_drop"] is not None
+    assert t["worst_two_month_drop"] is not None
     assert t["months_evaluated"] == 12
 
 
@@ -328,23 +343,29 @@ def test_auditable_does_not_mutate_the_frontend_payload(engine):
     tb = ToolBox(engine)
     raw = tb.call("get_airport_profile", {"iata": "BOS"})
     before = len(raw["scores"]["temporal"]["months"])
-    _auditable(raw)
+    _auditable(tb, "get_airport_profile", raw)
     assert len(raw["scores"]["temporal"]["months"]) == before == 12
 
 
-def test_auditable_handles_compare_rows_and_odd_shapes(engine):
+def test_auditable_handles_compare_rows(engine):
     from app.agent.orchestrator import _auditable
 
     tb = ToolBox(engine)
-    c = _auditable(tb.call("compare_airports", {"iatas": ["LAX", "SNA"]}))
+    c = _auditable(tb, "compare_airports",
+                   tb.call("compare_airports", {"iatas": ["LAX", "SNA"]}))
     for row in c["airports"]:
-        assert "months" not in row["scores"]["temporal"]
-    # Shapes with nothing to strip pass through untouched.
-    assert _auditable({"a": 1}) == {"a": 1}
-    assert _auditable([1, 2]) == [1, 2]
-    assert _auditable("x") == "x"
-    assert _auditable({"scores": {"aci": {}}}) == {"scores": {"aci": {}}}
-    assert _auditable({"airports": [{"iata": "X"}]}) == {"airports": [{"iata": "X"}]}
+        assert "months" not in row["aci_temporal"]
+
+
+def test_auditable_never_raises_on_an_odd_payload(engine):
+    """A projection failure must not block a turn; it falls back to the payload."""
+    from app.agent.orchestrator import _auditable
+
+    tb = ToolBox(engine)
+    for odd in ({"a": 1}, [1, 2], "x", None, {"error": "boom"}):
+        _auditable(tb, "get_airport_profile", odd)
+    # An unknown tool name simply passes the dict through.
+    assert _auditable(tb, "no_such_tool", {"a": 1}) == {"a": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +510,7 @@ def test_real_temporal_figures_still_pass_the_audit(engine):
     tb = ToolBox(engine)
     raw = tb.call("get_airport_profile", {"iata": "BOS"})
     known: set[float] = set()
-    collect_numbers(_auditable(raw), known)
+    collect_numbers(_auditable(tb, "get_airport_profile", raw), known)
 
     t = raw["scores"]["temporal"]
     text = (

@@ -277,14 +277,21 @@ def test_long_haul_compact_keeps_the_full_sensitivity_table(toolbox):
     assert compact["reconciliation"]["breakdown"]["combi"]["departures"] == 888
 
 
-def test_unmet_compact_keeps_every_indicator_and_the_caveat(toolbox):
+def test_unmet_compact_keeps_every_indicator_and_the_refusal(toolbox):
+    """Phase 8.3 final: the band moved into `counts` and the long `caveat`
+    paragraph into the panel and the prompt. Its substance must still reach the
+    model — via the imperative requirement and the shared quantification limit.
+    """
     full = toolbox.call("unmet_demand_evidence", {"iata": "SFO"})
     compact = toolbox.compact_for_model("unmet_demand_evidence", full)
     assert len(compact["indicators"]) == len(full["indicators"])
-    assert compact["evidence_band"] == full["evidence_band"]
-    assert "not a measurement" in compact["caveat"].lower()
+    assert compact["counts"]["band"] == full["evidence_band"]
+    assert "do not state or imply a number" in compact["reporting_requirement"].lower()
+    assert "none is produced" in compact["limits"]["quantification"]
+    # ...and the full caveat is still in the payload the frontend receives.
+    assert "not a measurement" in full["caveat"].lower()
     u5 = next(i for i in compact["indicators"] if i["id"] == "U5")
-    assert u5["available"] is False and u5["unavailable_reason"]
+    assert u5["triggered"] is None and u5["unavailable_reason"]
 
 
 def test_rank_compact_keeps_all_rows_and_suppression_reasons(toolbox, engine):
