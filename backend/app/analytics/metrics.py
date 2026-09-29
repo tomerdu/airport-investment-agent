@@ -13,7 +13,7 @@ quiet January would count as much as a busy July.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 from etl import config
 
@@ -65,6 +65,15 @@ class AirportMetrics:
     enplanement_growth: float | None = None
     enplanements_preliminary: bool = False
 
+    # --- monthly series (TDPI v2 only) ---
+    # Window aggregates cannot express month-to-month behaviour, so the v2
+    # components that need a shape — sustained growth, peak concentration —
+    # read these. 'YYYY-MM' -> value. Months absent from the warehouse are
+    # absent here too; they are never filled with zero.
+    monthly_passengers: dict[str, float] = field(default_factory=dict)
+    monthly_passengers_prior: dict[str, float] = field(default_factory=dict)
+    monthly_departures: dict[str, float] = field(default_factory=dict)
+
     # ---------------------------------------------------------------
     # Derived metrics. All SUM/SUM over the window.
     # ---------------------------------------------------------------
@@ -87,11 +96,82 @@ class AirportMetrics:
             return None
         return self.seats_prior / self.departures_prior
 
+    # ---------------------------------------------------------------
+    # Year-over-year window comparability (Phase 8.1c).
+    #
+    # A YoY ratio is only a measurement of demand if both sides cover the
+    # SAME CALENDAR MONTHS. Equal month *counts* are not sufficient: GST and
+    # KLW each report 11 window months and 11 prior months, but the window
+    # includes 2025-12 while the prior side includes 2025-04 instead, so a
+    # plain SUM/SUM ratio silently compares December against April.
+    #
+    # The rule has no tunable threshold. It asks one question — does every
+    # window month have a prior-year counterpart? — and the ratio is taken
+    # over the matched months only.
+    # ---------------------------------------------------------------
+
+    def _yoy_passenger_totals(self) -> tuple[float, float, int, int]:
+        """(current_sum, prior_sum, matched_months, unmatched_window_months).
+
+        Summed over window months that have a prior-year counterpart. Months
+        present on only one side are excluded from BOTH sums, so the numerator
+        and denominator always span the same calendar months.
+        """
+        cur_sum = prior_sum = 0.0
+        matched = unmatched = 0
+        for month, cur in self.monthly_passengers.items():
+            year, mm = month.split("-")
+            prev = self.monthly_passengers_prior.get(f"{int(year) - 1:04d}-{mm}")
+            if cur is None:
+                continue
+            if prev is None:
+                unmatched += 1
+                continue
+            cur_sum += cur
+            prior_sum += prev
+            matched += 1
+        return cur_sum, prior_sum, matched, unmatched
+
+    @property
+    def yoy_windows_aligned(self) -> bool:
+        """Does every window month have a prior-year counterpart?
+
+        When the monthly series is unavailable this returns True, leaving the
+        legacy annual SUM/SUM behaviour in place rather than suppressing a
+        component on the basis of data we do not have.
+        """
+        if not self.monthly_passengers or not self.monthly_passengers_prior:
+            return True
+        _, _, matched, unmatched = self._yoy_passenger_totals()
+        return unmatched == 0 and matched > 0
+
+    @property
+    def yoy_months_matched(self) -> int:
+        """Window months with a prior-year counterpart. Diagnostic only."""
+        if not self.monthly_passengers or not self.monthly_passengers_prior:
+            return 0
+        return self._yoy_passenger_totals()[2]
+
     @property
     def pax_growth(self) -> float | None:
-        if not self.passengers_prior or self.passengers is None:
+        """Year-over-year passenger growth, compared like-for-like.
+
+        Suppressed (None) when the prior window does not cover every month of
+        the current window — the component is then dropped and the remaining
+        weights renormalised by `_compose`, never imputed. See
+        `yoy_windows_aligned`.
+        """
+        if self.passengers is None:
             return None
-        return self.passengers / self.passengers_prior - 1.0
+        if not self.monthly_passengers or not self.monthly_passengers_prior:
+            # No monthly series (some test fixtures): legacy annual ratio.
+            if not self.passengers_prior:
+                return None
+            return self.passengers / self.passengers_prior - 1.0
+        cur_sum, prior_sum, matched, unmatched = self._yoy_passenger_totals()
+        if unmatched or matched == 0 or prior_sum <= 0:
+            return None
+        return cur_sum / prior_sum - 1.0
 
     @property
     def departure_growth(self) -> float | None:
@@ -145,6 +225,117 @@ class AirportMetrics:
     def cancel_rate(self) -> float | None:
         return self.cancelled / self.flights if self.flights else None
 
+    # ---------------------------------------------------------------
+    # TDPI v2 candidate metrics (experimental, opt-in)
+    # ---------------------------------------------------------------
+    # Every one returns None rather than a filled value when its eligibility
+    # rule is not met. Thresholds are named constants in `definitions` so the
+    # rules are inspectable rather than buried in arithmetic.
+
+    @property
+    def pax_per_departure(self) -> float | None:
+        """Actual passengers carried per departure.
+
+        Replaces load factor × gauge: those measure *seat* supply, this
+        measures realised passengers, which is what a terminal handles.
+        """
+        if not self.departures or self.passengers is None:
+            return None
+        return self.passengers / self.departures
+
+    @property
+    def pax_per_departure_prior(self) -> float | None:
+        if not self.departures_prior or self.passengers_prior is None:
+            return None
+        return self.passengers_prior / self.departures_prior
+
+    @property
+    def pax_per_departure_growth(self) -> float | None:
+        """YoY change in passengers per departure.
+
+        Rising = each movement delivers more people into the terminal, whether
+        through bigger aircraft or fuller ones. Unlike gauge it cannot rise on
+        empty seats.
+        """
+        cur, prior = self.pax_per_departure, self.pax_per_departure_prior
+        if cur is None or not prior:
+            return None
+        return cur / prior - 1.0
+
+    def _yoy_month_pairs(self) -> list[tuple[str, float]]:
+        """(month, YoY growth) for each window month with a usable prior-year
+        counterpart. Months without a pair are omitted, never imputed."""
+        out: list[tuple[str, float]] = []
+        for month, cur in sorted(self.monthly_passengers.items()):
+            year, mm = month.split("-")
+            prior_key = f"{int(year) - 1:04d}-{mm}"
+            prev = self.monthly_passengers_prior.get(prior_key)
+            if prev and prev > 0 and cur is not None:
+                out.append((month, cur / prev - 1.0))
+        return out
+
+    @property
+    def yoy_months_evaluable(self) -> int:
+        return len(self._yoy_month_pairs())
+
+    @property
+    def sustained_growth(self) -> float | None:
+        """Share of evaluable months whose YoY passenger growth is positive.
+
+        Separates durable expansion from a single outlier month: an airport
+        that grew 20% on one chartered summer can score the same annual growth
+        as one that grew 2% every month, but not the same sustained share.
+
+        Requires `MIN_YOY_MONTHS_FOR_SUSTAINED` evaluable month-pairs.
+        """
+        from .definitions import MIN_YOY_MONTHS_FOR_SUSTAINED
+
+        pairs = self._yoy_month_pairs()
+        if len(pairs) < MIN_YOY_MONTHS_FOR_SUSTAINED:
+            return None
+        return sum(1 for _, g in pairs if g > 0) / len(pairs)
+
+    @property
+    def peak_concentration(self) -> float | None:
+        """Busiest month ÷ mean month, over window passengers.
+
+        Terminals are sized for peak rather than mean throughput, so this is
+        conceptually relevant — but it rises with *seasonality* as well as with
+        pressure. A summer-only resort airport scores high while being empty
+        for nine months. Evaluated rather than assumed; see the Phase 8.1
+        report.
+        """
+        from .definitions import MIN_MONTHS_FOR_PEAK
+
+        vals = [v for v in self.monthly_passengers.values() if v is not None and v > 0]
+        if len(vals) < MIN_MONTHS_FOR_PEAK:
+            return None
+        mean = sum(vals) / len(vals)
+        return max(vals) / mean if mean > 0 else None
+
+    @property
+    def absolute_pax_growth(self) -> float | None:
+        """Passenger count delta versus the prior window.
+
+        Size-biased by construction: a 2% gain at a large hub outweighs a 40%
+        gain at a small one. Kept as a candidate so the bias can be measured
+        rather than argued about.
+        """
+        if self.passengers is None or self.passengers_prior is None:
+            return None
+        return self.passengers - self.passengers_prior
+
+
+    @property
+    def tdpi_v2_eligible(self) -> bool:
+        """Enough months in both windows for the shape-based components."""
+        from .definitions import MIN_MONTHS_FOR_PEAK, MIN_YOY_MONTHS_FOR_SUSTAINED
+
+        return (
+            len(self.monthly_passengers) >= MIN_MONTHS_FOR_PEAK
+            and self.yoy_months_evaluable >= MIN_YOY_MONTHS_FOR_SUSTAINED
+        )
+
     @property
     def has_traffic(self) -> bool:
         return bool(self.departures)
@@ -186,6 +377,16 @@ SELECT iata,
 FROM airport_delay_month
 WHERE month BETWEEN ? AND ?
 GROUP BY iata
+"""
+
+
+# Per-month rows for the TDPI v2 shape metrics. Kept separate from the
+# aggregate query so v1 is untouched.
+_MONTHLY_SQL = """
+SELECT iata, month, passengers, departures
+FROM airport_month
+WHERE month BETWEEN ? AND ?
+ORDER BY iata, month
 """
 
 
@@ -231,6 +432,19 @@ def load_metrics(
         m.passengers_prior = r["passengers"]
         m.seats_prior = r["seats"]
         m.traffic_months_prior = r["months"]
+
+    # Monthly series spanning BOTH windows, for the TDPI v2 shape metrics.
+    # One pass; months missing from the warehouse simply do not appear.
+    for r in conn.execute(_MONTHLY_SQL, (prior_start, window_end)):
+        m = out.get(r["iata"])
+        if m is None or r["passengers"] is None:
+            continue
+        if window_start <= r["month"] <= window_end:
+            m.monthly_passengers[r["month"]] = r["passengers"]
+            if r["departures"] is not None:
+                m.monthly_departures[r["month"]] = r["departures"]
+        elif prior_start <= r["month"] <= prior_end:
+            m.monthly_passengers_prior[r["month"]] = r["passengers"]
 
     for r in conn.execute(_DELAY_SQL, (window_start, window_end)):
         m = out.get(r["iata"])

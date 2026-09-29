@@ -24,6 +24,11 @@ from .definitions import (
     MIN_COVERAGE,
     MIN_OTP_FLIGHTS_FOR_ACI,
     TDPI_METRICS,
+    TDPI_V2C_METRICS,
+    TDPI_V2C_NOTES,
+    TDPI_V2_CONTEXT_ATTRS,
+    TDPI_V2_METRICS,
+    TDPI_V2_NOTES,
     MetricDef,
 )
 from .metrics import AirportMetrics
@@ -38,9 +43,10 @@ class Cohort:
         self.name = name
         self.members = members
         self.size = len(members)
-        attrs = [m.attr for m in TDPI_METRICS + ACI_METRICS] + [
+        attrs = [m.attr for m in TDPI_METRICS + ACI_METRICS + TDPI_V2_METRICS + TDPI_V2C_METRICS] + [
             "load_factor", "taxi_out_avg", "nas_delay_per_flight",
             "dep_del15_rate", "cancel_rate", "gauge_growth",
+            "pax_per_departure",
         ]
         # ACI metrics are only meaningful for airports that clear the volume
         # gate; including sub-threshold airports would drag the bounds toward
@@ -183,6 +189,92 @@ def compute_tdpi(m: AirportMetrics, cohort: Cohort) -> IndexResult:
     )
 
 
+def compute_tdpi_v2(
+    m: AirportMetrics,
+    cohort: Cohort,
+    *,
+    weights: dict[str, float] | None = None,
+) -> IndexResult:
+    """EXPERIMENTAL candidate composite. Not used by production paths.
+
+    `weights` overrides the declared weights by component id, for the
+    sensitivity analysis. Everything else — winsorized normalisation, weight
+    renormalisation over present components, the 0.60 coverage floor, no
+    imputation — is identical to v1, so a v1/v2 difference is attributable to
+    the component set rather than to the machinery.
+    """
+    defs = TDPI_V2_METRICS
+    if weights:
+        defs = [
+            MetricDef(**{**d.__dict__, "weight": weights.get(d.id, d.weight)})
+            for d in defs
+        ]
+
+    forced = None
+    notes = list(TDPI_V2_NOTES)
+    if not m.tdpi_v2_eligible:
+        forced = "insufficient_coverage"
+        notes.append(
+            f"Suppressed: {m.yoy_months_evaluable} evaluable YoY month-pairs "
+            f"and {len(m.monthly_passengers)} window months — below the "
+            f"minimum for the shape-based components. Not imputed."
+        )
+
+    result = _compose(
+        "TDPI_V2", "Terminal Demand Pressure Index (v2, experimental)",
+        defs, m, cohort, forced_suppression=forced, notes=notes,
+    )
+
+    # Context values travel with the score but are never summed into it.
+    context = []
+    for attr, label in TDPI_V2_CONTEXT_ATTRS.items():
+        value = getattr(m, attr, None)
+        context.append({"attr": attr, "label": label, "value": value})
+    result.notes.append(
+        "Context (not scored): "
+        + "; ".join(
+            f"{c['label']}="
+            + ("n/a" if c["value"] is None else f"{c['value']:,.4g}")
+            for c in context
+        )
+    )
+    return result
+
+
+def compute_tdpi_v2c(
+    m: AirportMetrics,
+    cohort: Cohort,
+    *,
+    weights: dict[str, float] | None = None,
+) -> IndexResult:
+    """EXPERIMENTAL correction candidate. Not used by any production path.
+
+    Same machinery as v1 and v2 — winsorized normalisation, weight
+    renormalisation, the 0.60 coverage floor, no imputation — so differences
+    are attributable to the component set alone.
+    """
+    defs = TDPI_V2C_METRICS
+    if weights:
+        defs = [
+            MetricDef(**{**d.__dict__, "weight": weights.get(d.id, d.weight)})
+            for d in defs
+        ]
+
+    forced = None
+    notes = list(TDPI_V2C_NOTES)
+    if not m.tdpi_v2_eligible:
+        forced = "insufficient_coverage"
+        notes.append(
+            f"Suppressed: {m.yoy_months_evaluable} evaluable YoY month-pairs, "
+            f"below the minimum for the sustained-growth component. Not imputed."
+        )
+
+    return _compose(
+        "TDPI_V2C", "Terminal Demand Pressure Index (v2c, experimental)",
+        defs, m, cohort, forced_suppression=forced, notes=notes,
+    )
+
+
 def compute_aci(m: AirportMetrics, cohort: Cohort) -> IndexResult:
     forced = None
     notes = [
@@ -265,3 +357,5 @@ def score_airport(
         sources=sources or [],
         limitations=limitations,
     )
+
+

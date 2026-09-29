@@ -74,6 +74,13 @@ TDPI_METRICS: list[MetricDef] = [
     MetricDef(
         id="T2", label="Passenger growth (YoY)", attr="pax_growth",
         weight=0.30, source=SRC_T100, unit="%", fmt=_pct,
+        note=(
+            "Compared like-for-like: the ratio spans only calendar months "
+            "present in both the current and prior windows. If the prior year "
+            "does not cover every month of the current window, this component "
+            "is dropped rather than reported, because the ratio would measure "
+            "reporting coverage instead of demand."
+        ),
     ),
     MetricDef(
         id="T3", label="Gauge (seats per departure)", attr="seats_per_departure",
@@ -94,6 +101,179 @@ TDPI_METRICS: list[MetricDef] = [
         weight=0.15, source=SRC_FAA, unit="%", fmt=_pct,
         note="FAA CY2025 is preliminary and will be restated.",
     ),
+]
+
+# ---------------------------------------------------------------------------
+# TDPI v2 — EXPERIMENTAL candidate composite (opt-in, not the default)
+# ---------------------------------------------------------------------------
+# Motivation for each change from v1:
+#
+#   * v1 T1 (load factor) and T3 (gauge) both describe SEAT supply. Neither
+#     says how many people actually walked through the terminal. v2 replaces
+#     both with the YoY change in passengers per departure.
+#   * v1 T2 (passenger growth) and T5 (FAA enplanement growth) measure the
+#     same underlying quantity from two sources, so scoring both double-counts
+#     growth. v2 scores the BTS figure and keeps FAA as a cross-source
+#     validation signal reported alongside, not summed in.
+#   * v1 T4 (throughput per runway) is a weak proxy for terminal capacity and
+#     is dropped from the composite. It is still computed and reported as
+#     context.
+#
+# The weights below are HYPOTHESES under evaluation, not settled methodology.
+# See docs/phase-8.1-tdpi-v2-evaluation.md.
+
+# Eligibility: shape metrics need enough months to have a shape at all.
+MIN_YOY_MONTHS_FOR_SUSTAINED = 8   # of 12 possible month-pairs
+MIN_MONTHS_FOR_PEAK = 10           # of 12 window months
+
+# ---------------------------------------------------------------------------
+# YEAR-OVER-YEAR WINDOW COMPARABILITY (Phase 8.1c) — ACTIVE in v1's T2.
+#
+# THE RULE: a YoY passenger-growth ratio is computed only when every month of
+# the current window has a prior-year counterpart, and it is summed over the
+# matched months alone. Otherwise T2 is dropped (never imputed) and the
+# remaining weights are renormalised by the existing machinery.
+#
+# There is no month-count threshold, and deliberately so. Three formulations
+# were considered:
+#
+#   (a) An absolute floor on prior months (">= 10 of 12"). REJECTED — it
+#       discards WYS (Yellowstone), a seasonal airport reporting 6 window and
+#       6 prior months that align exactly. Its +22% is a valid like-for-like
+#       figure; a floor throws away a correct number and would have moved WYS
+#       118 rank places for no analytical reason.
+#
+#   (b) Equal month COUNTS (prior >= window - 1). REJECTED — counts do not
+#       imply the same months. GST and KLW each report 11 and 11, and both
+#       pass (b), yet their window includes 2025-12 while their prior side
+#       includes 2025-04 instead: the ratio compares December against April.
+#
+#   (c) MATCHING CALENDAR MONTHS. ADOPTED. It is parameter-free, it preserves
+#       WYS, and it is the only one of the three that states the property a
+#       growth ratio actually needs: both sides span the same months.
+#
+# Why alignment alone is not sufficient, and why the rule requires COMPLETE
+# alignment rather than merely computing over whatever overlaps: GUF reports
+# 12 window months against a prior year containing 2 months totalling SEVEN
+# passengers (5 in 2024-06, 2 in 2024-08). Restricting the ratio to those two
+# matched months still yields +167,929%. The prior year does not cover the
+# airport's operation, so no ratio against it measures demand.
+#
+# Scope: this governs T2 (BTS T-100 passengers). It does NOT govern T5, which
+# is FAA annual enplanements — a different source with its own coverage
+# characteristics and no monthly series to align.
+#
+# Measured effect on the current warehouse: 5 of 399 airports change; see
+# docs/phase-8.1c-tdpi-decision-and-comparability.md.
+# ---------------------------------------------------------------------------
+
+SEASONALITY_WARN_RATIO = 2.0       # peak/mean above this is strongly seasonal
+
+
+def _ratio(v: float) -> str:
+    return f"{v:.2f}x"
+
+
+TDPI_V2_METRICS: list[MetricDef] = [
+    MetricDef(
+        id="V1", label="Passenger growth (YoY)", attr="pax_growth",
+        weight=0.30, source=SRC_T100, unit="%", fmt=_pct,
+        note="BTS T-100 only. FAA enplanement growth is reported as a "
+             "cross-source check rather than scored again.",
+    ),
+    MetricDef(
+        id="V2", label="Sustained growth (share of months positive)",
+        attr="sustained_growth", weight=0.25, source=SRC_T100, unit="%", fmt=_pct,
+        note=f"Share of evaluable month-pairs with positive YoY passenger "
+             f"growth. Requires at least {MIN_YOY_MONTHS_FOR_SUSTAINED} of 12 "
+             f"pairs. Distinguishes durable expansion from one outlier month.",
+    ),
+    MetricDef(
+        id="V3", label="Peak demand concentration", attr="peak_concentration",
+        weight=0.20, source=SRC_T100, unit="ratio", fmt=_ratio,
+        note="Busiest month / mean month. Terminals are sized for peak, but "
+             "this rises with SEASONALITY as well as pressure — a summer-only "
+             "airport scores high while empty for nine months. Under "
+             "evaluation; see the Phase 8.1 report.",
+    ),
+    MetricDef(
+        id="V4", label="Absolute passenger growth", attr="absolute_pax_growth",
+        weight=0.15, source=SRC_T100, unit="passengers", fmt=_num,
+        note="Size-biased by construction and correlated with V1, which is the "
+             "same quantity in percentage form. Included so the redundancy can "
+             "be measured rather than argued.",
+    ),
+    MetricDef(
+        id="V5", label="Change in passengers per departure",
+        attr="pax_per_departure_growth", weight=0.10, source=SRC_T100,
+        unit="%", fmt=_pct,
+        note="Replaces v1's load factor and gauge. Measures realised "
+             "passengers per movement, so it cannot rise on empty seats.",
+    ),
+]
+
+# Reported beside a v2 score but NOT summed into it.
+TDPI_V2_CONTEXT_ATTRS = {
+    "enplanement_growth": "FAA enplanement growth (cross-source check)",
+    "pax_per_runway": "Throughput per runway (context only; dropped from v2)",
+    "peak_concentration": "Peak/mean month ratio (seasonality indicator)",
+}
+
+TDPI_V2_NOTES = [
+    "TDPI v2 is EXPERIMENTAL and opt-in. TDPI v1 remains the production "
+    "default; nothing in the agent or frontend uses v2 unless asked.",
+    "Like v1, v2 is a composite proxy for passenger demand pressure. It does "
+    "not measure terminal capacity and is not an investment recommendation.",
+    "FAA enplanement growth is reported as a cross-source validation signal, "
+    "not scored, to avoid double-counting growth already captured by V1.",
+]
+
+# ---------------------------------------------------------------------------
+# TDPI v2c — EXPERIMENTAL correction candidate (opt-in, not the default)
+# ---------------------------------------------------------------------------
+# Proposed in the Phase 8.1 report after v2 was rejected: drop V3 (peak
+# concentration, which measured seasonality) and V4 (absolute growth, which
+# duplicated V1), and restore a level anchor.
+#
+# ⚠ C3 IS THE OPEN QUESTION. Passengers per departure is average aircraft
+# occupancy — gauge × load factor. It says how many people arrive per
+# MOVEMENT, not how many pass through the terminal. An airport running 100
+# flights of 200 passengers imposes the same terminal load as one running 200
+# flights of 100, yet C3 scores the first twice as high. Phase 8.1b tests
+# whether C3 earns its place or is a gauge proxy wearing a level-anchor label.
+
+TDPI_V2C_METRICS: list[MetricDef] = [
+    MetricDef(
+        id="C1", label="Passenger growth (YoY)", attr="pax_growth",
+        weight=0.30, source=SRC_T100, unit="%", fmt=_pct,
+    ),
+    MetricDef(
+        id="C2", label="Sustained growth (share of months positive)",
+        attr="sustained_growth", weight=0.25, source=SRC_T100, unit="%", fmt=_pct,
+    ),
+    MetricDef(
+        id="C3", label="Passengers per departure (level)",
+        attr="pax_per_departure", weight=0.30, source=SRC_T100,
+        unit="passengers", fmt=_num,
+        note="Average aircraft occupancy (gauge x load factor). This is a "
+             "per-MOVEMENT measure, not a terminal-throughput measure, and it "
+             "is NOT a measurement of terminal capacity. Under evaluation in "
+             "Phase 8.1b.",
+    ),
+    MetricDef(
+        id="C4", label="Change in passengers per departure",
+        attr="pax_per_departure_growth", weight=0.15, source=SRC_T100,
+        unit="%", fmt=_pct,
+    ),
+]
+
+TDPI_V2C_NOTES = [
+    "TDPI v2c is EXPERIMENTAL and opt-in. TDPI v1 remains the production "
+    "default; no agent, API or frontend path uses v2c.",
+    "A composite proxy for passenger demand pressure. It does not measure "
+    "terminal capacity and is not an investment recommendation.",
+    "C3 is average aircraft occupancy, a per-movement quantity. It must not be "
+    "read as terminal throughput or as evidence of terminal constraint.",
 ]
 
 # ---------------------------------------------------------------------------
