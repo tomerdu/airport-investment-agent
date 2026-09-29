@@ -255,7 +255,7 @@ measurement of terminal capacity.
 | # | Component | Weight | Rationale |
 |---|---|---:|---|
 | T1 | Load factor | 0.20 | Level of fill; saturating, so not dominant |
-| T2 | Passenger growth YoY | **0.30** | Investment follows the trend, not the level |
+| T2 | Passenger growth YoY ⚠ **like-for-like months** | **0.30** | Investment follows the trend, not the level |
 | T3 | Gauge (seats/departure) | 0.15 | Upgauging = more passengers through the same footprint — the most terminal-specific signal available |
 | T4 | Throughput per runway ⚠ **proxy** | 0.20 | Closest available stand-in for volume against physical scale |
 | T5 | Enplanement growth (FAA) | 0.15 | Independent second opinion; down-weighted because CY2025 is preliminary |
@@ -263,6 +263,21 @@ measurement of terminal capacity.
 **T4 carries an explicit warning** in the code, the API response and the UI. It
 ignores runway geometry, spacing and weather-dependence, and correlates only
 loosely with terminal size. It is never evidence that a terminal is full.
+
+**T2 is compared like-for-like.** The ratio spans only calendar months present in
+both the current and prior windows, and it is computed **only when every window
+month has a prior-year counterpart**. Otherwise T2 is dropped and the remaining
+weights renormalise — an incomparable ratio is treated as missing data, not as a
+value.
+
+The rule has no month-count threshold. That matters in both directions: an
+absolute floor would discard WYS (Yellowstone), a genuinely seasonal airport
+whose 6 window and 6 prior months align exactly; and an equal-*count* rule lets
+GST and KLW through, whose 11-vs-11 windows are offset by a month so the ratio
+compares December against April. Before this rule, GUF — whose prior year
+contains 2 months totalling **seven passengers** — was ranked **3rd of 399** on a
+computed growth of **+839,571%**. See §12 and
+`phase-8.1c-tdpi-decision-and-comparability.md`.
 
 ### ACI — Airside Congestion Index
 
@@ -526,5 +541,31 @@ language model returned an error (401). The analytics engine is unaffected."*
   would move ACI closer to a genuine utilisation measure.
 - **Solve the ATADS parameter contract** for true tower operations counts.
 - **Weight sensitivity analysis** — show how rankings shift under alternative
-  weightings, making the judgement explicit rather than fixed.
+  weightings, making the judgement explicit rather than fixed. Partially done:
+  Phases 8.1/8.1b measured this for two candidate formulations (see below).
 - **Voice I/O** via the Web Speech API (the brief's stated bonus).
+
+### Deferred: a per-time-period level anchor for TDPI
+
+Phases 8.1 and 8.1b evaluated two alternative TDPI formulations (v2, v2c) and
+**rejected both**; v1 is retained. The decision record is
+`phase-8.1-decision-record.md`, with the full evidence in
+`phase-8.1-tdpi-v2-evaluation.md` and `phase-8.1b-tdpi-v2c-validation.md`.
+
+Further formula research is deferred until suitable data exists, because the two
+open problems both need inputs this system does not have:
+
+1. **A level anchor that is actually about the terminal.** Every level term
+   available from T-100 is per-*movement* (gauge, load factor, passengers per
+   departure) and therefore describes aircraft, not buildings. What is needed is
+   a per-*time-period* measure of passenger handling — passengers per gate, per
+   processing position, or peak-hour counts. None is present in T-100, FAA
+   enplanements or the on-time database.
+2. **Collapsing the growth pair.** Any formulation scoring growth magnitude and
+   growth consistency separately double-counts: measured Spearman between them
+   was +0.876 while they jointly carried 55% of the weight.
+
+There is also **no ground truth** available — no dataset records which airports
+actually needed terminal investment — so no formulation, including v1, has been
+validated against outcomes. All comparisons to date are internal consistency and
+conceptual validity only.

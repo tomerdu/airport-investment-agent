@@ -98,7 +98,7 @@ Rationale: min-max on raw values lets one outlier (ATL, or a single cancelled-ou
 | # | Component | Formula | Source | Weight |
 |---|---|---|---|---:|
 | T1 | Load factor | $\text{pax}_{12} / \text{seats}_{12}$ | T-100 `r495-tyji` | **0.20** |
-| T2 | Passenger growth | $\text{pax}_{12} / \text{pax}_{\text{prior }12} - 1$ | T-100 | **0.30** |
+| T2 | Passenger growth ⚠ **like-for-like months only** | $\sum_{m \in M}\text{pax}_m \big/ \sum_{m \in M}\text{pax}_{m-12} - 1$, where $M$ = window months with a prior-year counterpart | T-100 | **0.30** |
 | T3 | Gauge (seats/departure) | $\text{seats}_{12} / \text{dep}_{12}$ | T-100 | **0.15** |
 | T4 | Throughput per runway ⚠ **proxy** | $\text{pax}_{12} / \text{runway count}$ | T-100 + OurAirports | **0.20** |
 | T5 | Enplanement YoY | FAA `% Change` (CY25 vs CY24) | FAA enplanements | **0.15** |
@@ -113,6 +113,40 @@ $$
 - **T3 (0.15)** captures **upgauging**: when airlines put bigger aircraft on the same number of flights, passenger volume rises without a single extra movement — terminal load grows while airside load does not. This is the most *terminal-specific* signal available to us.
 - **T1 (0.20)** is level-of-fill; useful but saturating (most US airports now sit 78–85%), so it is not dominant.
 - **T5 (0.15)** is a second opinion on growth from an independent official source, deliberately down-weighted because CY2025 is **preliminary**.
+
+---
+
+> ### ⚠ T2 requires comparable year-over-year windows (Phase 8.1c)
+>
+> **The rule.** T2 is computed only when **every month of the current window has
+> a prior-year counterpart**, and the ratio is summed over those matched months
+> alone. If any window month is missing from the prior year, T2 is **dropped** —
+> the remaining weights renormalise, exactly as for any other missing component,
+> and the value is never imputed.
+>
+> **There is no month-count threshold**, deliberately. Three formulations were
+> measured; only the third states the property a ratio actually needs:
+>
+> | Rule | Verdict |
+> |---|---|
+> | Absolute floor (prior ≥ 10 of 12 months) | **Rejected.** Discards WYS (Yellowstone), a seasonal airport with 6 window and 6 prior months that align exactly. Its +22% is valid; the floor would have moved it 118 rank places for no reason. |
+> | Equal month counts (prior ≥ window − 1) | **Rejected.** Counts do not imply the same months. GST and KLW each report 11 and 11 and pass this rule, yet their window holds 2025-12 while the prior side holds 2025-04 — the ratio compares December against April. |
+> | **Matching calendar months** | **Adopted.** Parameter-free, preserves valid seasonal comparisons, and catches misalignment that counts hide. |
+>
+> **Why complete alignment, rather than scoring whatever overlaps.** GUF reports
+> 12 window months against a prior year of 2 months totalling **seven
+> passengers**. Restricting the ratio to those two matched months still yields
+> **+167,929%**. When the prior year does not cover the airport's operation, no
+> ratio against it measures demand, so the component is dropped rather than
+> rescaled.
+>
+> **Scope.** This governs T2 (BTS T-100 monthly passengers). It does **not**
+> govern T5, which is FAA annual enplanements — a different source with its own
+> coverage characteristics and no monthly series to align.
+>
+> **Measured effect:** 5 of 399 airports change. GUF falls from rank 3 to 35;
+> GST and KLW lose T2 (ranks 373→388, 367→375); BGM and BLD keep a corrected
+> ratio. Full evidence in `phase-8.1c-tdpi-decision-and-comparability.md`.
 
 ---
 
@@ -244,6 +278,16 @@ Rules, in order:
 4. **Refuse below 0.60 coverage** — return `score: null`, `reason: "insufficient_coverage"`, plus the list of missing components. A score built on two of five components is not a score.
 5. **Volume gate** (§4) applies independently of coverage.
 6. **Every score object carries `components[]`** with each component's raw value, normalised value, weight, and source — so the UI can always show the arithmetic.
+7. **A metric that cannot be computed comparably counts as missing.** T2's year-over-year window-comparability rule (§3) is an instance of this: when the prior year does not cover the current window's months, T2 is absent rather than wrong, and rules 1–4 apply to it unchanged. An incomparable ratio is not data.
+
+> **Note on cohort-relative normalisation.** Because scores are normalised
+> against cohort percentiles, suppressing a component removes observations from
+> that metric's distribution and shifts the winsorization bounds slightly for
+> everyone. When the T2 guard was introduced this moved 357 of the other 394
+> airports by at most **0.22 TDPI points** (max rank move 3). This is inherent
+> to cohort-relative scoring, not a defect — but it means any change to
+> component availability has a small cohort-wide footprint that should be
+> measured rather than assumed to be zero.
 
 Example return shape:
 
