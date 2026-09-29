@@ -51,6 +51,40 @@ class _ApiFailure(Exception):
         self.decision = decision
 
 
+def _auditable(payload: Any) -> Any:
+    """A tool result with the model-invisible parts removed, for the numeric audit.
+
+    The audit accepts any figure reachable in a remembered payload. The ACI
+    temporal diagnostic's monthly series is deliberately withheld from the model
+    (the panel renders it), so admitting its ~90 values per profile would widen
+    the pool of "provenanced" numbers by about 40% without the model ever having
+    been shown them. Everything the model *is* shown is summarised in the compact
+    view and stays auditable; only the withheld series is dropped.
+
+    The full payload still reaches the frontend unchanged — this affects the
+    audit's number pool only.
+    """
+    if not isinstance(payload, dict):
+        return payload
+
+    def strip(scores: Any) -> Any:
+        t = scores.get("temporal") if isinstance(scores, dict) else None
+        if not isinstance(t, dict) or "months" not in t:
+            return scores
+        return {**scores, "temporal": {k: v for k, v in t.items() if k != "months"}}
+
+    out = dict(payload)
+    if isinstance(out.get("scores"), dict):
+        out["scores"] = strip(out["scores"])
+    if isinstance(out.get("airports"), list):
+        out["airports"] = [
+            {**a, "scores": strip(a["scores"])}
+            if isinstance(a, dict) and isinstance(a.get("scores"), dict) else a
+            for a in out["airports"]
+        ]
+    return out
+
+
 @dataclass
 class ToolInvocation:
     name: str
@@ -356,7 +390,7 @@ class Orchestrator:
         scores = self._harvest(session, calls)
         payloads = [c.result for c in calls if c.ok]
         for payload in payloads:
-            session.remember_numbers(payload)
+            session.remember_numbers(_auditable(payload))
 
         # Audited against the whole session, not just this turn: follow-ups
         # legitimately re-quote figures fetched earlier.

@@ -55,8 +55,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "Full deterministic profile for one airport: traffic and delay "
             "metrics, TDPI (Terminal Demand Pressure Index), ACI (Airside "
             "Congestion Index), the divergence class, and every score's "
-            "component-level derivation. Use for 'tell me about X', 'why is X "
-            "ranked there', or any single-airport question."
+            "component-level derivation. Also returns 'aci_temporal', which "
+            "describes WHEN within the window the ACI score occurred — how many "
+            "months were measured, whether pressure was sustained or "
+            "concentrated in a few months, and any coverage caveats. Use for "
+            "'tell me about X', 'why is X ranked there', or any single-airport "
+            "question."
         ),
         "input_schema": {
             "type": "object",
@@ -197,6 +201,29 @@ def _r(v: Any, places: int = 4) -> Any:
     return round(v, places)
 
 
+def _r_score(v: Any) -> Any:
+    """Round a 0–100 index-scale value to one decimal, for narrative use.
+
+    Index scores, normalised component values and percentiles are cohort-relative
+    positions on a 0–100 scale; a second decimal is noise and a fourth
+    ("ACI 79.4545") reads as false precision in prose. Ratios and rates keep
+    `_r`'s four places, because a cancellation rate of 0.0105 needs them.
+
+    This affects the MODEL VIEW only. The frontend payload and every
+    deterministic calculation keep full precision.
+    """
+    if isinstance(v, bool) or not isinstance(v, float):
+        return v
+    return round(v, 1)
+
+
+def _r_minutes(v: Any) -> Any:
+    """Minutes to two decimals: 18.52, not 18.5234."""
+    if isinstance(v, bool) or not isinstance(v, float):
+        return v
+    return round(v, 2)
+
+
 # --------------------------------------------------------------------------
 # Implementations
 # --------------------------------------------------------------------------
@@ -250,13 +277,15 @@ class ToolBox:
         out = {
             "id": comp.get("id"),
             "label": comp.get("label"),
+            # `raw_display` is already formatted by the metric's own formatter,
+            # so the raw value needs no rounding policy here.
             "raw": comp.get("raw_display"),
-            "norm": _r(comp.get("normalized")),
+            "norm": _r_score(comp.get("normalized")),
             "weight": comp.get("weight"),
-            "contribution": _r(comp.get("contribution")),
+            "contribution": _r_score(comp.get("contribution")),
         }
         if keep_percentile and comp.get("percentile") is not None:
-            out["percentile"] = _r(comp["percentile"])
+            out["percentile"] = _r_score(comp["percentile"])
         if not comp.get("available"):
             out["available"] = False
         return out
@@ -264,8 +293,8 @@ class ToolBox:
     @classmethod
     def _index(cls, idx: dict, with_components: bool = True) -> dict:
         out: dict[str, Any] = {
-            "score": _r(idx.get("score")),
-            "coverage": _r(idx.get("coverage")),
+            "score": _r_score(idx.get("score")),
+            "coverage": _r(idx.get("coverage"), 2),
         }
         if idx.get("suppressed_reason"):
             out["suppressed_reason"] = idx["suppressed_reason"]
@@ -283,6 +312,42 @@ class ToolBox:
             "class": scores.get("divergence_class"),
             "class_reading": scores.get("divergence_reading"),
         }
+
+    @classmethod
+    def _temporal(cls, t: dict | None) -> dict | None:
+        """Supporting evidence about WHEN an ACI score occurred.
+
+        The monthly series is deliberately withheld from the model: the panel
+        renders it, and 12 rows per airport would ride along in history for the
+        rest of the conversation. The model gets the summary figures it needs to
+        describe the pattern in words.
+        """
+        if not t:
+            return None
+        conc = t.get("concentration") or {}
+        out: dict[str, Any] = {
+            "temporal_pattern": t.get("temporal_pattern"),
+            "pattern_label": t.get("pattern_label"),
+            "months_evaluated": t.get("months_evaluated"),
+            "months_available": t.get("months_available"),
+            "months_expected": t.get("months_expected"),
+            "monthly_spread": _r_score(t.get("monthly_spread")),
+            "elevated_months": t.get("elevated_months"),
+            "description": t.get("description"),
+        }
+        if t.get("no_elevated_months"):
+            # Guards against reading INTERMITTENT as intermittent congestion.
+            out["no_elevated_months"] = True
+        if conc.get("reliable"):
+            out["worst_two_month_drop"] = _r_score(conc.get("worst_two_month_drop"))
+        else:
+            out["worst_two_month_drop"] = None
+            out["concentration_unavailable"] = conc.get("unreliable_reason")
+        if t.get("elevated_season"):
+            out["elevated_season"] = t["elevated_season"]
+        if t.get("uncertainty"):
+            out["uncertainty"] = t["uncertainty"]
+        return out
 
     def compact_for_model(self, name: str, result: Any) -> Any:
         """Reduce a tool result to what the model needs to reason and narrate."""
@@ -307,9 +372,12 @@ class ToolBox:
             ]
 
         elif name == "get_airport_profile":
-            # Single airport: keep the full derivation � this is what answers
+            # Single airport: keep the full derivation — this is what answers
             # "why is it scored that way".
             r["scores"] = self._scores(result.get("scores", {}), with_components=True)
+            temporal = self._temporal((result.get("scores") or {}).get("temporal"))
+            if temporal:
+                r["aci_temporal"] = temporal
 
         elif name == "compare_airports":
             r["airports"] = [
@@ -319,8 +387,14 @@ class ToolBox:
                     "runway_count": a.get("runway_count"),
                     "longest_runway_ft": a.get("longest_runway_ft"),
                     "volume": {k: _r(v) for k, v in (a.get("volume") or {}).items()},
-                    "intensity": {k: _r(v) for k, v in (a.get("intensity") or {}).items()},
+                    # Minutes to 2 dp; rates and ratios keep 4.
+                    "intensity": {
+                        k: (_r_minutes(v) if k.endswith("_min") else _r(v))
+                        for k, v in (a.get("intensity") or {}).items()
+                    },
                     "scores": self._scores(a.get("scores") or {}, with_components=False),
+                    **({"aci_temporal": t} if (t := self._temporal(
+                        (a.get("scores") or {}).get("temporal"))) else {}),
                 }
                 for a in result.get("airports", [])
             ]

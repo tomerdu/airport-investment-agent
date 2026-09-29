@@ -9,6 +9,8 @@ import type {
   LongHaulResult,
   RankResult,
   SourceRecord,
+  TemporalDiagnostic,
+  TemporalPattern,
   UnmetDemandResult,
 } from '../types';
 import {
@@ -34,6 +36,239 @@ export function TdpiDisclaimer() {
       rather than runway or airspace capacity. Divergence classes are screening
       classifications — a prompt to look closer, not an infrastructure diagnosis,
       and not a statement about whether any investment would be profitable.
+    </div>
+  );
+}
+
+const PATTERN_META: Record<
+  TemporalPattern,
+  { label: string; blurb: string; tone: string }
+> = {
+  PERSISTENT: {
+    label: 'Sustained',
+    blurb:
+      'Elevated across most of the measured window. The annual score does not rest on a few months.',
+    tone: 'ok',
+  },
+  EPISODIC: {
+    label: 'Concentrated',
+    blurb:
+      'Elevated in only part of the window. Removing the two worst months lowers the annual score materially.',
+    tone: 'caution',
+  },
+  INTERMITTENT: {
+    label: 'Partly concentrated',
+    blurb:
+      'Between sustained and concentrated. Read the monthly figures rather than the label.',
+    tone: '',
+  },
+  INSUFFICIENT_DATA: {
+    label: 'Not enough data',
+    blurb:
+      'Too few months carry enough reported flights to characterise how this score is distributed.',
+    tone: 'caution',
+  },
+};
+
+/** Pattern presentation, corrected for two cases the bare label overstates.
+ *
+ *  - No month crossed the elevated threshold: "Partly concentrated" would read
+ *    as intermittent congestion when there was never elevated pressure at all.
+ *  - The score sits at the cohort ceiling: a PERSISTENT label cannot borrow the
+ *    concentration result, because that result is unmeasurable there.
+ */
+function patternView(t: {
+  temporal_pattern: TemporalPattern;
+  pattern_label: string;
+  no_elevated_months?: boolean;
+  concentration_reliable?: boolean;
+  concentration_unreliable_reason?: string | null;
+}): { label: string; blurb: string; tone: string } {
+  const base = PATTERN_META[t.temporal_pattern];
+  const atCeiling =
+    t.concentration_unreliable_reason === 'score_at_cohort_ceiling';
+
+  if (t.no_elevated_months) {
+    return {
+      label: 'No elevated months',
+      blurb:
+        'No month reached the elevated threshold. The monthly values vary, but they vary around a level that never became elevated — this is not intermittent congestion.',
+      tone: 'ok',
+    };
+  }
+  if (t.temporal_pattern === 'PERSISTENT' && atCeiling) {
+    return {
+      label: 'Elevated in most months',
+      blurb:
+        'Elevated in most of the measured months. This rests on the count of elevated months alone: the score is at the cohort ceiling, so the worst-two-month effect could not be measured and cannot be used to support it.',
+      tone: 'caution',
+    };
+  }
+  return base;
+}
+
+/**
+ * ACI temporal distribution. Supplementary evidence about WHEN the measured
+ * delay occurred — never a component of ACI, never part of a ranking or a
+ * divergence class, and never a statement about cause.
+ *
+ * `temporal_pattern` is a distinct field from `divergence_class`; its
+ * intermediate value is INTERMITTENT precisely so it cannot be read as the
+ * class MIXED.
+ */
+export function TemporalPanel({ t }: { t: TemporalDiagnostic }) {
+  const conc = t.concentration;
+  const meta = patternView({
+    temporal_pattern: t.temporal_pattern,
+    pattern_label: t.pattern_label,
+    no_elevated_months: t.no_elevated_months,
+    concentration_reliable: conc.reliable,
+    concentration_unreliable_reason: conc.unreliable_reason,
+  });
+  const partial = t.months_available < t.months_expected;
+  const ceiling = conc.unreliable_reason === 'score_at_cohort_ceiling';
+  const maxFlights = Math.max(1, ...t.months.map((m) => m.flights));
+
+  return (
+    <div className="temporal" style={{ marginTop: 14 }}>
+      <div className="temporal-head">
+        <span className={`badge ${meta.tone}`}>{meta.label}</span>
+        <span className="temporal-coverage">
+          <Term k="ACI">ACI</Term> measured over{' '}
+          <b>
+            {t.months_evaluated} of {t.months_expected}
+          </b>{' '}
+          months
+          {partial && (
+            <>
+              {' '}
+              — only <b>{t.months_available}</b> reported by the source
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="note">{meta.blurb}</div>
+      <div className="note">{t.description}</div>
+
+      <div className="table-scroll" style={{ marginTop: 10 }}>
+        <table className="data">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th className="num">Flights</th>
+              <th className="num">Monthly ACI</th>
+              <th>Distribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {t.months.map((m) => (
+              <tr key={m.month} className={m.elevated ? 'row-elevated' : undefined}>
+                <td className="name">{m.month}</td>
+                <td className="num">{fmtNum(m.flights)}</td>
+                <td className="num">
+                  {m.evaluated ? fmtScore(m.aci) : <span className="muted">—</span>}
+                </td>
+                <td>
+                  {m.evaluated ? (
+                    <span className="bar-wrap" title={`monthly ACI ${fmtScore(m.aci)}`}>
+                      <span
+                        className={`bar ${m.elevated ? 'bar-elevated' : ''}`}
+                        style={{ width: `${Math.max(1, m.aci ?? 0)}%` }}
+                      />
+                    </span>
+                  ) : (
+                    <span className="muted small">
+                      not evaluated — {fmtNum(m.flights)} flights is too few for a
+                      monthly rate
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="note small">
+        Bar width is the month&apos;s ACI on the same 0–100 scale as the annual
+        score. Flight counts are shown because a monthly rate on a few hundred
+        flights moves substantially on a handful of events. Largest month here:{' '}
+        {fmtNum(maxFlights)} flights.
+      </div>
+
+      <div className="table-scroll" style={{ marginTop: 10 }}>
+        <table className="data">
+          <tbody>
+            <tr>
+              <td className="name">
+                Months elevated (ACI ≥ {t.elevated_threshold})
+              </td>
+              <td className="num">
+                {t.elevated_months} / {t.months_evaluated}
+              </td>
+            </tr>
+            <tr>
+              <td className="name">Monthly spread (max − min)</td>
+              <td className="num">{fmtScore(t.monthly_spread)}</td>
+            </tr>
+            <tr>
+              <td className="name">
+                Effect of removing the two worst months
+              </td>
+              <td className="num">
+                {conc.reliable && conc.worst_two_month_drop !== null ? (
+                  <>
+                    −{fmtScore(conc.worst_two_month_drop)} pt
+                    {conc.aci_excluding_worst_two !== null && (
+                      <span className="muted">
+                        {' '}
+                        (to {fmtScore(conc.aci_excluding_worst_two)})
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="muted">not measurable</span>
+                )}
+              </td>
+            </tr>
+            {t.elevated_season && (
+              <tr>
+                <td className="name">Timing of elevated months</td>
+                <td className="num">{t.elevated_season}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {ceiling && (
+        <div className="note caution">
+          <b>This score is at the top of the cohort scale.</b> The normalisation
+          clips values above the cohort&apos;s 95th percentile, so removing the
+          worst months cannot lower the score. The two-month effect is therefore{' '}
+          <b>unmeasurable here, not zero</b> — it must not be read as evidence
+          that pressure is stable. The monthly spread of{' '}
+          {fmtScore(t.monthly_spread)} points shows the underlying variation.
+        </div>
+      )}
+
+      {t.uncertainty.length > 0 && (
+        <div className="note caution">
+          <b>Coverage and uncertainty</b>
+          <ul>
+            {t.uncertainty.map((u, i) => (
+              <li key={i}>{u}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="note">
+        This describes <b>when</b> the measured delay occurred, not{' '}
+        <b>why</b>. Seasonal timing is not a cause: the on-time data records
+        outcomes, not the reason for them. Nothing here changes the ACI score,
+        the ranking or the divergence class.
+      </div>
     </div>
   );
 }
@@ -236,6 +471,27 @@ export function ProfilePanel({ data }: { data: AirportProfileResult }) {
       <div style={{ marginTop: 14 }}>
         <Breakdown scores={s} />
       </div>
+      {s.temporal && (
+        <details className="temporal-details" open={!s.temporal.coverage_complete}>
+          <summary>
+            When did the airside delay occur? —{' '}
+            {patternView({
+              temporal_pattern: s.temporal.temporal_pattern,
+              pattern_label: s.temporal.pattern_label,
+              no_elevated_months: s.temporal.no_elevated_months,
+              concentration_reliable: s.temporal.concentration.reliable,
+              concentration_unreliable_reason:
+                s.temporal.concentration.unreliable_reason,
+            }).label}
+            {!s.temporal.coverage_complete && (
+              <span className="badge caution" style={{ marginLeft: 8 }}>
+                partial coverage
+              </span>
+            )}
+          </summary>
+          <TemporalPanel t={s.temporal} />
+        </details>
+      )}
       <TdpiDisclaimer />
     </Card>
   );
@@ -451,9 +707,110 @@ export function ComparePanel({ data }: { data: CompareResult }) {
                 </td>
               ))}
             </tr>
+            {data.airports.some((a) => a.temporal) && (
+              <>
+                <tr>
+                  <td className="name" colSpan={codes.length + 1}>
+                    <b style={{ fontSize: 11, letterSpacing: '0.05em' }}>
+                      ACI TEMPORAL DISTRIBUTION (WHEN, NOT WHY)
+                    </b>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="name">Pattern</td>
+                  {data.airports.map((a) => (
+                    <td key={a.iata} className="num">
+                      {a.temporal ? (
+                        <span className={`badge ${patternView(a.temporal).tone}`}>
+                          {patternView(a.temporal).label}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="name">Months measured</td>
+                  {data.airports.map((a) => (
+                    <td key={a.iata} className="num">
+                      {a.temporal ? (
+                        <>
+                          {a.temporal.months_evaluated} / {a.temporal.months_expected}
+                          {!a.temporal.coverage_complete && (
+                            <span className="badge caution" style={{ marginLeft: 6 }}>
+                              partial
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="name">Effect of removing 2 worst months</td>
+                  {data.airports.map((a) => (
+                    <td key={a.iata} className="num">
+                      {!a.temporal ? (
+                        '—'
+                      ) : a.temporal.concentration_reliable &&
+                        a.temporal.worst_two_month_drop !== null ? (
+                        <>−{fmtScore(a.temporal.worst_two_month_drop)} pt</>
+                      ) : (
+                        <span
+                          className="muted"
+                          title={
+                            a.temporal.concentration_unreliable_reason ===
+                            'score_at_cohort_ceiling'
+                              ? 'Score is clipped at the cohort ceiling, so removing months cannot lower it. Unmeasurable, not zero.'
+                              : 'Too few evaluable months to measure.'
+                          }
+                        >
+                          not measurable
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className="name">Monthly spread</td>
+                  {data.airports.map((a) => (
+                    <td key={a.iata} className="num">
+                      {a.temporal ? fmtScore(a.temporal.monthly_spread) : '—'}
+                    </td>
+                  ))}
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>
+
+      {data.airports.some((a) => a.temporal && a.temporal.uncertainty.length > 0) && (
+        <div className="note caution">
+          <b>Temporal coverage caveats</b>
+          <ul>
+            {data.airports.flatMap((a) =>
+              (a.temporal?.uncertainty ?? []).map((u, i) => (
+                <li key={`${a.iata}-${i}`}>
+                  <b>{a.iata}:</b> {u}
+                </li>
+              )),
+            )}
+          </ul>
+        </div>
+      )}
+      {data.airports.some((a) => a.temporal) && (
+        <div className="note">
+          The temporal rows describe <b>when</b> each airport&apos;s measured
+          delay occurred within the window, not why. They are supporting evidence
+          only and take no part in the ACI score, the ranking or the divergence
+          class. &quot;Partly concentrated&quot; is a temporal pattern and is
+          unrelated to the <b>MIXED</b> divergence class.
+        </div>
+      )}
       <TdpiDisclaimer />
     </Card>
   );

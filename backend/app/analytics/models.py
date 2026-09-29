@@ -86,6 +86,12 @@ class AirportScores:
     divergence_reading: str
     sources: list[dict[str, Any]]
     limitations: list[str]
+    # Supplementary ACI temporal diagnostic (Phase 8.2b). Optional and
+    # defaulted, so every existing caller and response shape is unaffected:
+    # `null` where the engine did not attach one. It explains the DISTRIBUTION
+    # of the ACI score across the window and is never a component of any score,
+    # ranking or classification.
+    temporal: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

@@ -297,6 +297,55 @@ on a few hundred observations are noise, and a confident score on noise is worse
 than no score. Cohort bounds for ACI also exclude sub-gate airports so
 small-sample values cannot drag them.
 
+#### ACI temporal diagnostic — when, not why
+
+An annual ACI answers "how much delay", not "when". Two airports can share a
+score while one is pressured all year and the other only in December. Profiles
+and comparisons therefore carry a supplementary `temporal` block
+(`app/analytics/persistence.py`): months available vs expected, monthly ACI
+values with their flight counts, how far those values spread, and how far the
+annual score falls when its two worst months are removed.
+
+It is **diagnostic only**. It is not a component of ACI, it does not appear in
+rankings, and `classify()` never sees it. `score_airport()` neither accepts nor
+produces it — the engine attaches it *after* scoring, so it cannot influence the
+figure it explains. Tests pin each of those boundaries.
+
+Four design points matter:
+
+- **Ratio of sums, not mean of ratios.** ACI components are
+  `SUM(numerator)/SUM(denominator)` over the window, so busy months already count
+  for more. The counterfactual re-sums the retained months and calls the
+  production `compute_aci()`; a test asserts that retaining *all* months
+  reproduces the published score exactly.
+- **A monthly floor mirroring the annual one.** `MIN_FLIGHTS_PER_MONTH` is
+  `MIN_OTP_FLIGHTS_FOR_ACI // 12` = 83, so the diagnostic inherits the index's
+  own tolerance for small samples rather than inventing a second one. Months
+  below it are reported unevaluated, never scored as zero.
+- **Seasonality preserved deliberately.** Monthly values are normalised against
+  the *annual* cohort bounds, so a month that is bad cohort-wide reads as bad
+  rather than being normalised away.
+- **`temporal_pattern` is not `divergence_class`.** Its intermediate value is
+  **INTERMITTENT**, never MIXED, so the two fields cannot be confused. Two labels
+  are corrected where the bare pattern would overstate: an INTERMITTENT airport
+  with **no** elevated month reads "No elevated months" rather than "partly
+  concentrated" (LAX, ACI 37.9 — variation around a level that never became
+  elevated is not intermittent congestion), and a PERSISTENT airport at the
+  ceiling reads "concentration unmeasurable", because the claim "does not depend
+  on a few months" *is* the concentration result and that result is unavailable
+  there.
+
+Two limits are surfaced rather than hidden. Where an airport reports fewer than
+twelve months (ACK, MVY — six each), coverage is stated and the score is still
+shown; the approved decision was to disclose, not suppress. Where a score sits at
+the cohort ceiling (ASE, ACI 100.0), winsorization clips the value so removing
+bad months cannot lower it: the concentration is reported as **unmeasurable with
+a reason**, never as zero, because zero there would read as stability.
+
+The diagnostic describes **timing, not cause**. OTP records outcomes, so the
+system says "winter-concentrated operational pressure", never "caused by winter
+weather". The system prompt, the panel copy and a test all enforce that.
+
 ### Divergence classification
 
 Screening classifications — **not recommendations or infrastructure diagnoses**.
@@ -314,6 +363,14 @@ With τ_hi = 60, τ_lo = 40:
 A suppressed ACI **never** falls through to TERMINAL_LED. Absence of a
 measurement is not evidence of absence, and the fall-through would be an
 investment signal built on a gap. Test-enforced.
+
+**MIXED is the residual class, and its wording matters.** It holds whenever *at
+least one* index lands in the intermediate 40–60 band, so the pair matches none
+of the four corners. It does **not** mean both scores are mid-range: BOS is MIXED
+with TDPI 58.6 and ACI 79.5. The class reading, the panel copy and the system
+prompt all state this explicitly, because an earlier wording ("both indices fall
+in the middle band") contradicted the two figures displayed beside it. A test
+pins the wording against BOS's actual scores.
 
 ### UDEI — Unmet Demand Evidence
 
@@ -450,6 +507,20 @@ On failure: one regeneration with a correction marked as an automated check
 (not a user message, or the model apologises for something the user never
 said). If that also fails, a templated answer rendered directly from tool
 output — correctness over prose.
+
+**What the audit is allowed to accept.** The pool is every number reachable in a
+remembered tool payload, minus the parts the model was never shown. The ACI
+temporal diagnostic's monthly series is the current instance: the panel renders
+those twelve rows, but the model receives only the summary figures, so admitting
+the series would have widened the pool by about 40% per profile (measured: 280 →
+393 numbers for BOS) on data the model could not have read. `_auditable()` in the
+orchestrator drops it before the numbers are remembered — 393 → 303, with the
+remaining increase being exactly the summary figures the model does see. The full
+payload still reaches the frontend unchanged; only the audit's pool is narrowed.
+
+This is a provenance check, not a semantic one: it verifies a number *exists* in
+the data, not that it is the right number for the sentence. Narrowing the pool to
+what the model was actually shown is what keeps that check meaningful.
 
 The audit fired for real during live testing, catching a fabricated percentile
 and a bad figure in two separate runs.

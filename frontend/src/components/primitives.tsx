@@ -116,8 +116,11 @@ export const CLASS_META: Record<
   MIXED: {
     label: 'Mixed',
     color: 'var(--warning)',
+    // Must not claim BOTH scores are mid-range: MIXED only requires that ONE of
+    // them is. BOS is MIXED with TDPI 58.6 and ACI 79.5 — the old wording
+    // contradicted the two figures shown directly above it.
     blurb:
-      'Both indices fall in the middle band. Read the two scores directly rather than the label.',
+      'At least one of the two indices sits in the intermediate band (40–60), so the pair does not match one of the four corner profiles. The label combines a demand-side and an airside signal without distinguishing them — it does not mean both scores are mid-range, and one of them may be high or low. Read the two scores above rather than the label.',
   },
   UNCLASSIFIED_AIRSIDE_UNKNOWN: {
     label: 'Airside unmeasured',

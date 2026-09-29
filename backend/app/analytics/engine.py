@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,10 +18,37 @@ from .definitions import GLOBAL_LIMITATIONS
 from .longhaul import long_haul_breakdown
 from .metrics import AirportMetrics, load_metrics
 from .models import AirportScores, LongHaulResult, UnmetDemandEvidence
+from .persistence import MonthlyDelay, build_profile, load_monthly_delay
 from .scoring import Cohort, build_cohort, score_airport
 from .unmet import unmet_demand_evidence
 
 WINDOW_LABEL = f"{config.WINDOW_START}..{config.WINDOW_END}"
+
+
+def _temporal_summary(t: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The comparison-table subset of a temporal diagnostic.
+
+    Drops the monthly series and the notes; keeps every figure a reader needs to
+    judge whether two ACI scores mean the same thing.
+    """
+    if t is None:
+        return None
+    return {
+        "temporal_pattern": t["temporal_pattern"],
+        "pattern_label": t["pattern_label"],
+        "months_available": t["months_available"],
+        "months_expected": t["months_expected"],
+        "months_evaluated": t["months_evaluated"],
+        "coverage_complete": t["coverage_complete"],
+        "worst_two_month_drop": t["concentration"]["worst_two_month_drop"],
+        "concentration_reliable": t["concentration"]["reliable"],
+        "concentration_unreliable_reason": t["concentration"]["unreliable_reason"],
+        "monthly_spread": t["monthly_spread"],
+        "elevated_months": t["elevated_months"],
+        "no_elevated_months": t["no_elevated_months"],
+        "elevated_season": t["elevated_season"],
+        "uncertainty": t["uncertainty"],
+    }
 
 
 class AnalyticsEngine:
@@ -46,6 +74,8 @@ class AnalyticsEngine:
         self.metrics: dict[str, AirportMetrics] = load_metrics(self.conn)
         self._cohorts: dict[str, Cohort] = {}
         self._sources: list[dict[str, Any]] | None = None
+        # Monthly OTP rows for the ACI temporal diagnostic; loaded on demand.
+        self._monthly_delay: dict[str, list[MonthlyDelay]] | None = None
 
     # -- infrastructure ----------------------------------------------------
 
@@ -106,6 +136,39 @@ class AnalyticsEngine:
 
     # -- primary operations -------------------------------------------------
 
+    def monthly_delay(self) -> dict[str, list[MonthlyDelay]]:
+        """Monthly OTP rows, loaded once on first use.
+
+        Deliberately lazy: ranking never needs it, so startup and the ranking
+        path stay exactly as fast as before the diagnostic existed.
+        """
+        if self._monthly_delay is None:
+            self._monthly_delay = load_monthly_delay(
+                self.conn, config.WINDOW_START, config.WINDOW_END
+            )
+        return self._monthly_delay
+
+    def temporal_diagnostic(
+        self, iata: str, *, hub_class_cohort: bool = False
+    ) -> dict[str, Any] | None:
+        """Supplementary ACI temporal diagnostic, or None when unavailable.
+
+        Explains how an existing ACI score is distributed across the window. It
+        is not a score, not a component of one, and is never consulted by
+        ranking or classification.
+        """
+        m = self.get_metrics(iata)
+        if m is None:
+            return None
+        rows = self.monthly_delay().get(m.iata)
+        if not rows:
+            return None
+        cohort = self.cohort(hub_class=m.hub_class if hub_class_cohort else None)
+        profile = build_profile(m, rows, cohort)
+        if profile.annual_aci is None:
+            return None          # no ACI to explain
+        return profile.to_dict()
+
     def profile(
         self, iata: str, *, hub_class_cohort: bool = False
     ) -> AirportScores | None:
@@ -113,7 +176,17 @@ class AnalyticsEngine:
         if m is None:
             return None
         cohort = self.cohort(hub_class=m.hub_class if hub_class_cohort else None)
-        return score_airport(m, cohort, window=self.window, sources=self.sources())
+        scores = score_airport(
+            m, cohort, window=self.window, sources=self.sources()
+        )
+        # Attached after scoring, never during it: the diagnostic explains the
+        # ACI figure and cannot influence it.
+        return replace(
+            scores,
+            temporal=self.temporal_diagnostic(
+                iata, hub_class_cohort=hub_class_cohort
+            ),
+        )
 
     def _scale(self, m: AirportMetrics) -> dict[str, Any]:
         """Absolute size, reported beside every score.
@@ -251,6 +324,11 @@ class AnalyticsEngine:
                         "dep_delay_avg_min": m.dep_delay_avg,
                     },
                     "scores": s.to_dict() if s else None,
+                    # Temporal distribution of the ACI figure above. Surfaced at
+                    # the row level so a comparison table can show it without
+                    # reaching into `scores`; the full monthly series stays in
+                    # `scores.temporal`.
+                    "temporal": _temporal_summary(s.temporal if s else None),
                 }
             )
 

@@ -569,3 +569,97 @@ details.disclosure[open] > summary::before { content: '▾ '; }
   .bubble { max-width: 94%; }
   .health .detail { display: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   ACI temporal diagnostic (Phase 8.2b)
+
+   Supplementary evidence about WHEN measured delay occurred. Styled to read as
+   secondary to the scores it annotates, never as a score itself.
+   All colours come from existing tokens, so dark mode follows automatically.
+--------------------------------------------------------------------------- */
+
+.temporal-details {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+}
+.temporal-details > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  list-style: none;
+}
+.temporal-details > summary::-webkit-details-marker { display: none; }
+.temporal-details > summary::before {
+  content: '\25B8';
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+.temporal-details[open] > summary::before { transform: rotate(90deg); }
+.temporal-details > summary:hover { color: var(--text-primary); }
+.temporal-details .temporal { padding: 0 12px 12px; }
+
+.temporal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.temporal-coverage { font-size: 12px; color: var(--text-secondary); }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border);
+  background: var(--raised);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.badge.ok {
+  border-color: var(--good);
+  color: var(--good);
+  background: transparent;
+}
+.badge.caution {
+  border-color: var(--warning);
+  color: var(--serious);
+  background: transparent;
+}
+
+.muted { color: var(--text-muted); }
+.small { font-size: 11px; }
+
+/* Monthly distribution bars. 0-100 on the same scale as the annual score. */
+.bar-wrap {
+  display: block;
+  position: relative;
+  height: 8px;
+  min-width: 90px;
+  border-radius: 4px;
+  background: var(--grid);
+  overflow: hidden;
+}
+.bar {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--aci-soft);
+}
+.bar.bar-elevated { background: var(--aci); }
+
+tr.row-elevated td { background: color-mix(in oklab, var(--aci) 6%, transparent); }
+
+@media (max-width: 560px) {
+  .bar-wrap { min-width: 56px; }
+  .temporal-details .temporal { padding: 0 10px 10px; }
+}

@@ -342,8 +342,12 @@ DIVERGENCE_READINGS = {
         "Neither demand pressure nor airside congestion is elevated versus peers."
     ),
     "MIXED": (
-        "Indices fall in the middle band; no clean classification. Read both "
-        "scores directly rather than the label."
+        "At least one of the two indices sits in the intermediate band "
+        f"({DIVERGENCE_LO:.0f}–{DIVERGENCE_HI:.0f}), so the pair does not match "
+        "one of the four corner profiles. The label combines a demand-side and "
+        "an airside signal without distinguishing them, and it does NOT mean "
+        "both scores are mid-range — one of them may well be high or low. Read "
+        "the two scores directly rather than the label."
     ),
     "UNCLASSIFIED_AIRSIDE_UNKNOWN": (
         "Airside congestion could not be computed (insufficient flight volume "

@@ -52,6 +52,82 @@ export type DivergenceClass =
   | 'UNCLASSIFIED_AIRSIDE_UNKNOWN'
   | 'UNCLASSIFIED';
 
+/** How an existing ACI score is distributed across the window.
+ *
+ * Supplementary evidence only: never a component of ACI or TDPI, and never an
+ * input to a ranking or a divergence class. `temporal_pattern` is a separate
+ * field from `divergence_class` — its INTERMITTENT value is deliberately not
+ * named MIXED so the two can never be confused.
+ */
+export type TemporalPattern =
+  | 'PERSISTENT'
+  | 'EPISODIC'
+  | 'INTERMITTENT'
+  | 'INSUFFICIENT_DATA';
+
+export interface TemporalMonth {
+  month: string;
+  flights: number;
+  aci: number | null;
+  evaluated: boolean;
+  elevated: boolean;
+  reason: string | null;
+}
+
+export interface TemporalConcentration {
+  /** Points the annual ACI loses when its two worst months are removed.
+   *  null when it could not be measured — see `unreliable_reason`. */
+  worst_two_month_drop: number | null;
+  aci_excluding_worst_two: number | null;
+  reliable: boolean;
+  /** 'score_at_cohort_ceiling' | 'insufficient_evaluable_months' | null */
+  unreliable_reason: string | null;
+  /** Control: points lost removing two MIDDLE months. Near zero validates the
+   *  measure as behaviour rather than arithmetic. */
+  null_baseline_drop: number | null;
+}
+
+export interface TemporalDiagnostic {
+  months_available: number;
+  months_expected: number;
+  months_evaluated: number;
+  months_unevaluated: number;
+  coverage_complete: boolean;
+  temporal_pattern: TemporalPattern;
+  pattern_label: string;
+  description: string;
+  concentration: TemporalConcentration;
+  monthly_spread: number | null;
+  elevated_months: number;
+  /** True when NO evaluated month crossed the elevated threshold. Guards
+   *  against reading INTERMITTENT as intermittent congestion. */
+  no_elevated_months: boolean;
+  elevated_share: number | null;
+  elevated_threshold: number;
+  elevated_season: string | null;
+  months: TemporalMonth[];
+  uncertainty: string[];
+  notes: string[];
+}
+
+/** Row-level subset carried on comparison rows. */
+export interface TemporalSummary {
+  temporal_pattern: TemporalPattern;
+  pattern_label: string;
+  months_available: number;
+  months_expected: number;
+  months_evaluated: number;
+  coverage_complete: boolean;
+  worst_two_month_drop: number | null;
+  concentration_reliable: boolean;
+  concentration_unreliable_reason: string | null;
+  monthly_spread: number | null;
+  elevated_months: number;
+  no_elevated_months: boolean;
+  elevated_season: string | null;
+  uncertainty: string[];
+}
+
 export interface AirportScores {
   iata: string;
   name: string;
@@ -65,6 +141,8 @@ export interface AirportScores {
   divergence_reading: string;
   sources: SourceRecord[];
   limitations: string[];
+  /** Optional and additive: absent on older payloads. */
+  temporal?: TemporalDiagnostic | null;
 }
 
 export interface RankedRow extends AirportScores {
@@ -115,6 +193,7 @@ export interface CompareAirport {
     dep_delay_avg_min: number | null;
   };
   scores: AirportScores | null;
+  temporal?: TemporalSummary | null;
 }
 
 export interface CompareResult {

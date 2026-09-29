@@ -252,9 +252,12 @@ def test_compact_view_preserves_every_headline_number(toolbox, engine):
     blob = json.dumps(compact)
 
     assert compact["traffic"]["load_factor"] == pytest.approx(m.load_factor)
-    assert compact["scores"]["tdpi"]["score"] == pytest.approx(
-        engine.profile("SFO").tdpi.score, abs=0.001
-    )
+    # Index scores are rounded to one decimal for the model view (Phase 8.2
+    # final: no four-decimal precision in narrative). The headline number is
+    # unchanged at reading precision; full precision stays in `full`.
+    exact = engine.profile("SFO").tdpi.score
+    assert compact["scores"]["tdpi"]["score"] == pytest.approx(round(exact, 1))
+    assert full["scores"]["tdpi"]["score"] == pytest.approx(exact)
     assert compact["scores"]["class"] == engine.profile("SFO").divergence_class
     for comp in compact["scores"]["tdpi"]["components"]:
         assert comp["id"] and comp["raw"] is not None
