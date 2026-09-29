@@ -80,7 +80,7 @@ Full detail: **[docs/design-document.md](docs/design-document.md)**
 | LLM | Claude Sonnet 5 via `anthropic` SDK, manual tool-calling loop |
 | Frontend | React 19, TypeScript, Vite |
 | ETL | `requests`, `openpyxl`, stdlib `csv` / `zipfile` / `sqlite3` |
-| Tests | pytest — 362 tests, all offline |
+| Tests | pytest — 564 tests, all offline |
 
 ## Data sources
 
@@ -199,7 +199,7 @@ instead of billing.
 
 ```powershell
 cd backend
-.venv\Scripts\python -m pytest                # 362 tests
+.venv\Scripts\python -m pytest                # 564 tests
 .venv\Scripts\python -m app.agent.preflight   # credential checks, no API call
 .venv\Scripts\python smoke_test.py --list     # manual checklist
 .venv\Scripts\python smoke_test.py --dry-run  # what a live run would send
@@ -254,7 +254,7 @@ airport-investment-agent/
 │   │   ├── data/           warehouse.db (committed)
 │   │   └── main.py         FastAPI
 │   ├── etl/                reproducible pipeline + warehouse build
-│   ├── tests/              362 offline tests
+│   ├── tests/              564 offline tests
 │   ├── smoke_test.py       the four questions, once each (live, gated)
 │   ├── measure_tokens.py   deterministic token measurement
 │   ├── report_checkpoint2.py  analytics deliverables (offline)

@@ -191,6 +191,24 @@ get a description that says so plainly rather than implying partial pressure.
 
 ## 5. A regression I introduced and fixed
 
+> ### ⚠ SUPERSEDED — implementation only, not the finding
+>
+> **The `_auditable()` implementation described in this section no longer
+> exists.** It stripped the monthly series *by name*. In **Phase 8.3** that
+> approach was replaced: as the frontend payload grew richer than the model view,
+> subtracting named fields stopped being reliable, so `_auditable()` now returns
+> `ToolBox.compact_for_model(...)` — the model-visible projection by
+> construction, which cannot drift
+> (`backend/app/agent/orchestrator.py:54-73`).
+>
+> The finding below — that adding the monthly series widened the audit pool by
+> ~40% with data the model never sees — is unchanged and still the reason the
+> filter exists. Only the mechanism changed. Current behaviour:
+> `docs/phase-8.3b-udei-integration.md` §10b.
+>
+> The original text is kept below unedited, as the record of what was done at the
+> time.
+
 Adding twelve monthly rows to the tool payload **weakened the numeric provenance
 audit**, which accepts any number reachable in a remembered payload:
 

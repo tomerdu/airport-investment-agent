@@ -1,13 +1,31 @@
-# Phase 2 — data foundation.
-# Deliberately minimal: the warehouse is built with the stdlib (sqlite3, csv,
-# zipfile, urllib) so the ETL has as few moving parts as possible.
+# Runtime and development dependencies for the backend.
+#
+# Direct dependencies only — transitive packages (starlette, pydantic-core,
+# anyio, httpx, certifi, ...) are resolved by pip and deliberately not pinned
+# here. This file is not a lock file; it is the set of things this code imports
+# or invokes, at versions verified together.
+#
+# Verified by installing into an empty virtual environment and running the full
+# offline test suite against it. See docs/phase-8.4-reproducibility.md.
+#
+#     python -m venv .venv
+#     .venv\Scripts\pip install -r requirements.txt     # Windows
+#     .venv/bin/pip install -r requirements.txt         # macOS / Linux
 
-requests==2.32.3        # HTTP with sane retry/session handling
-openpyxl==3.1.5         # FAA enplanement workbooks (.xlsx)
-pytest==8.3.4           # test runner
+# --- API service ----------------------------------------------------------
+fastapi==0.141.1            # app/main.py — routing and request validation
+uvicorn[standard]==0.54.0   # ASGI server; `python -m uvicorn app.main:app`
+pydantic==2.13.5            # imported directly by app/main.py for ChatRequest
 
-# Added in later phases (kept here so the stack is visible, commented until used):
-# fastapi==0.115.6
-# uvicorn[standard]==0.34.0
-# anthropic==0.42.0
-# python-dotenv==1.0.1
+# --- Agent ----------------------------------------------------------------
+anthropic==1.8.0            # Messages API client, used directly (no wrapper)
+python-dotenv==1.2.3        # loads the gitignored .env for ANTHROPIC_API_KEY
+
+# --- ETL ------------------------------------------------------------------
+# The warehouse build otherwise uses only the standard library (sqlite3, csv,
+# zipfile, urllib), so the pipeline has as few moving parts as possible.
+requests==2.32.3            # HTTP with sane retry/session handling
+openpyxl==3.1.5             # FAA enplanement workbooks (.xlsx)
+
+# --- Tests ----------------------------------------------------------------
+pytest==8.3.4               # 553-test offline suite; conftest blocks live calls
