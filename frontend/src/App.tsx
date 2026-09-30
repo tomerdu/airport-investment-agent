@@ -9,6 +9,7 @@ import {
   SourcesPanel,
   UnmetDemandPanel,
 } from './components/panels';
+import { useSpeechSynthesis } from './useVoice';
 import type {
   AgentReply,
   AirportProfileResult,
@@ -90,6 +91,15 @@ export default function App() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // One read-aloud controller for the whole conversation, so starting a second
+  // answer stops the first and no message is left stuck showing "Stop reading".
+  // Nothing calls speak() automatically — playback is always a button press.
+  const speech = useSpeechSynthesis();
+  // `speech` is a fresh object each render, so `reset` depends on the method
+  // rather than the container — stop() is a useCallback over state that never
+  // changes, so this keeps reset memoised on sessionId alone.
+  const stopSpeaking = speech.stop;
+
   useEffect(() => {
     api
       .health()
@@ -140,13 +150,14 @@ export default function App() {
   );
 
   const reset = useCallback(async () => {
+    stopSpeaking(); // don't keep reading an answer that is no longer on screen
     if (sessionId) await api.resetSession(sessionId).catch(() => undefined);
     setTurns([]);
     setLastReply(null);
     setLastAnalyticsReply(null);
     setAnalyticsStale(false);
     setSessionId(null);
-  }, [sessionId]);
+  }, [sessionId, stopSpeaking]);
 
   const analytics = useAnalytics(lastAnalyticsReply);
   const hasAnalytics =
@@ -225,7 +236,7 @@ export default function App() {
             ) : (
               <>
                 {turns.map((t) => (
-                  <Turn key={t.id} turn={t} />
+                  <Turn key={t.id} turn={t} speech={speech} />
                 ))}
                 {busy && <Thinking />}
                 {!busy && turns.length > 0 && (

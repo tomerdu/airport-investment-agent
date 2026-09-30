@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatTurn } from '../types';
 import { renderMarkdown } from '../markdown';
+import type { SpeechController } from '../useVoice';
+import { useSpeechRecognition } from '../useVoice';
+import { appendTranscript, spokenText } from '../voice';
 
 /** The four assignment questions, immediately runnable. */
 export const SUGGESTED = [
@@ -78,7 +81,14 @@ export function FollowUpChips({
   );
 }
 
-export function Turn({ turn }: { turn: ChatTurn }) {
+export function Turn({
+  turn,
+  speech,
+}: {
+  turn: ChatTurn;
+  /** Read-aloud controller, owned by App so only one answer speaks at a time. */
+  speech?: SpeechController;
+}) {
   if (turn.role === 'user') {
     return (
       <div className="turn user">
@@ -99,6 +109,9 @@ export function Turn({ turn }: { turn: ChatTurn }) {
   }
 
   const reply = turn.reply;
+  const canSpeak = !!speech?.supported && turn.text.trim() !== '';
+  const speaking = speech?.speakingId === turn.id;
+
   return (
     <div className="turn">
       <div className="bubble assistant">
@@ -108,28 +121,52 @@ export function Turn({ turn }: { turn: ChatTurn }) {
           // which emits only a fixed tag set and escapes everything else.
           dangerouslySetInnerHTML={{ __html: renderMarkdown(turn.text) }}
         />
-        {reply && (
+        {(reply || canSpeak) && (
           <div className="turn-meta">
-            {reply.tool_calls.map((t, i) => (
-              <span
-                className={`chip tool${t.ok ? '' : ' warn'}`}
-                key={`${t.name}-${i}`}
-                title={t.error ?? `${t.duration_ms} ms`}
+            {reply && (
+              <>
+                {reply.tool_calls.map((t, i) => (
+                  <span
+                    className={`chip tool${t.ok ? '' : ' warn'}`}
+                    key={`${t.name}-${i}`}
+                    title={t.error ?? `${t.duration_ms} ms`}
+                  >
+                    {t.ok ? '✓' : '✕'} {t.name}
+                  </span>
+                ))}
+                <span
+                  className={`chip ${reply.audit.passed ? 'ok' : 'warn'}`}
+                  title={reply.audit.summary}
+                >
+                  {reply.audit.passed ? '✓' : '⚠'} {reply.audit.numerals_checked} figures
+                  verified
+                </span>
+                {reply.degraded && (
+                  <span className="chip warn" title="The answer was regenerated after a provenance check">
+                    regenerated
+                  </span>
+                )}
+              </>
+            )}
+            {speech && canSpeak && (
+              <button
+                type="button"
+                className={`chip speak${speaking ? ' speaking' : ''}`}
+                aria-pressed={speaking}
+                // Speaks the visible answer text only — never the tool payloads,
+                // the chips above or anything else on the reply object.
+                onClick={() =>
+                  speaking ? speech.stop() : speech.speak(turn.id, spokenText(turn.text))
+                }
+                title={
+                  speaking
+                    ? 'Stop reading this answer aloud'
+                    : 'Read this answer aloud (English)'
+                }
               >
-                {t.ok ? '✓' : '✕'} {t.name}
-              </span>
-            ))}
-            <span
-              className={`chip ${reply.audit.passed ? 'ok' : 'warn'}`}
-              title={reply.audit.summary}
-            >
-              {reply.audit.passed ? '✓' : '⚠'} {reply.audit.numerals_checked} figures
-              verified
-            </span>
-            {reply.degraded && (
-              <span className="chip warn" title="The answer was regenerated after a provenance check">
-                regenerated
-              </span>
+                <span aria-hidden="true">{speaking ? '◼' : '▶'}</span>
+                {speaking ? 'Stop reading' : 'Read answer'}
+              </button>
             )}
           </div>
         )}
@@ -152,6 +189,17 @@ export function Composer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const disabled = busy || offline;
 
+  // Dictation lands in the draft rather than being sent. The user reads it,
+  // edits it if the recogniser misheard, and presses Send — so a transcript
+  // takes exactly the same path as typed text, with the same length limit and
+  // the same duplicate-send guard, and nothing is ever submitted unreviewed.
+  const acceptTranscript = useCallback((text: string) => {
+    setValue((current) => appendTranscript(current, text));
+    ref.current?.focus();
+  }, []);
+
+  const voice = useSpeechRecognition(acceptTranscript);
+
   useEffect(() => {
     if (!disabled) ref.current?.focus();
   }, [disabled]);
@@ -159,42 +207,108 @@ export function Composer({
   function submit() {
     const text = value.trim();
     if (!text || disabled) return;
+    if (voice.listening) voice.cancel();
     onSend(text);
     setValue('');
   }
 
+  const micLabel = !voice.supported
+    ? 'Voice input is not supported in this browser'
+    : voice.listening
+      ? 'Stop listening'
+      : 'Ask by voice';
+
   return (
-    <div className="composer">
-      <textarea
-        ref={ref}
-        value={value}
-        disabled={offline}
-        placeholder={
-          offline
-            ? 'Backend unavailable — start it on port 8000 to ask a question'
-            : 'Ask about an airport, a region, congestion, long-haul mix…'
+    <div
+      className="composer-wrap"
+      onKeyDown={(e) => {
+        // Escape abandons a listening session and discards the transcript.
+        if (e.key === 'Escape' && voice.listening) {
+          e.preventDefault();
+          voice.cancel();
         }
-        onChange={(e) => {
-          setValue(e.target.value);
-          e.target.style.height = 'auto';
-          e.target.style.height = `${Math.min(160, e.target.scrollHeight)}px`;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            submit();
+      }}
+    >
+      <div className="composer">
+        <textarea
+          ref={ref}
+          value={value}
+          disabled={offline}
+          placeholder={
+            offline
+              ? 'Backend unavailable — start it on port 8000 to ask a question'
+              : 'Ask about an airport, a region, congestion, long-haul mix…'
           }
-        }}
-        rows={1}
-        aria-label="Message"
-      />
-      <button
-        className="send-btn"
-        onClick={submit}
-        disabled={disabled || !value.trim()}
-      >
-        {offline ? 'Offline' : busy ? 'Working…' : 'Send'}
-      </button>
+          onChange={(e) => {
+            setValue(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${Math.min(160, e.target.scrollHeight)}px`;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={1}
+          aria-label="Message"
+        />
+        <button
+          type="button"
+          className={`mic-btn${voice.listening ? ' listening' : ''}`}
+          onClick={() => (voice.listening ? voice.stop() : voice.start())}
+          disabled={!voice.supported || offline}
+          aria-pressed={voice.listening}
+          aria-label={micLabel}
+          title={micLabel}
+        >
+          {voice.listening ? (
+            <span aria-hidden="true">◼</span>
+          ) : (
+            <svg
+              aria-hidden="true"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <rect x="9" y="2" width="6" height="11" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <path d="M12 18v3" />
+            </svg>
+          )}
+        </button>
+        <button
+          className="send-btn"
+          onClick={submit}
+          disabled={disabled || !value.trim()}
+        >
+          {offline ? 'Offline' : busy ? 'Working…' : 'Send'}
+        </button>
+      </div>
+
+      {/*
+        Listening state and errors are words, not just a coloured icon, and the
+        region is live so a screen reader announces the change.
+      */}
+      <div className="voice-note" role="status" aria-live="polite">
+        {voice.listening ? (
+          <span className="listening-state">
+            <span className="mic-pulse" aria-hidden="true" />
+            Listening in English — speak your question, then press Stop (or Esc to
+            discard).
+          </span>
+        ) : voice.error ? (
+          <span className="voice-error">{voice.error}</span>
+        ) : !voice.supported ? (
+          <span>
+            Voice input needs Chrome or Edge on desktop. Typing works everywhere.
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
