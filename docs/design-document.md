@@ -1,50 +1,24 @@
 # Design Document — Airport Investment Intelligence Agent
 
-Technical design for the Deloitte Digital FDE exercise.
+Technical design for the Deloitte Digital FDE exercise. Scoring methodology, key
+tradeoffs, and where AI is used.
 
-## Executive summary
+## 1. Overview and architecture
 
-A conversational screening tool for US airport modernisation investment, over a pinned
-12-month window of public BTS and FAA data (2025-05..2026-04, 401 airports). **The LLM
-decides what to do and how to explain it; deterministic code decides the numbers.**
+A conversational screening tool for US airport modernisation investment. An analyst asks in
+natural language — "which New England airports are candidates for terminal expansion?",
+"compare LA and Santa Ana congestion" — and gets a ranked, explained answer with every figure
+traceable to a deterministic calculation.
 
-- **TDPI** (Terminal Demand Pressure Index) — a cohort-relative **proxy** for
-  passenger-handling demand pressure. Not a measurement of terminal or gate capacity.
-- **ACI** (Airside Congestion Index) — a **proxy** built from observed delay *outcomes*.
-  It does not measure runway or airspace capacity and identifies no cause.
-- **UDEI** — organises indicators *consistent with* constrained supply. It has no
-  magnitude field by design: unmet demand is a counterfactual, never quantified here.
-- **Claude** handles intent, tool selection and arguments, conversational context and
-  calibrated explanation. It calculates nothing.
-- A **screening tool, not an ROI or profitability model** — the cost, financing and
-  revenue inputs those need are not public.
+The organising principle is a hard split: **the LLM decides what to do and how to explain it;
+deterministic code decides the numbers.** Claude interprets the question, picks tools, handles
+follow-ups and writes the explanation, but never computes a figure. Every score, rate and
+classification comes from pure Python over a fixed dataset, which is what makes each number
+reproducible and auditable.
 
-The governing tradeoff: analytical reproducibility and calibrated interpretation over
-speculative completeness. Where the data cannot support a claim, the system says so
-rather than estimating.
-
-## 1. Scope — what public data actually supports
-
-What the brief asks for and what public data supports are not the same thing.
-Profitability needs construction cost, financing terms and use-and-lease agreements;
-terminal capacity needs gates, holdroom area, checkpoint lanes and baggage throughput.
-Neither is published. Four things get casually merged in aviation conversation, and
-merging them is how a tool starts lying:
-
-| Layer | Measurable here? | From what |
-|---|---|---|
-| Delay outcomes | **Yes, directly observed** | Taxi-out, NAS delay, delay rate, cancellations |
-| Realised passenger demand | **Yes, directly observed** | FAA enplanements, T-100 passengers |
-| Airside *capacity* | **No** | Needs declared capacity rates; ASPM is login-walled |
-| Terminal capacity | **No** | Not published anywhere I verified |
-| Unmet demand | **No — counterfactual** | Proxy indicators only |
-| Renovation profitability | **No** | Requires private cost and revenue data |
-
-So the system ranks airports on observable demand pressure and delay outcomes, separates
-terminal-side from airside signals, and organises evidence about supply constraint. It
-does not measure capacity, diagnose causes, forecast or quantify unmet demand.
-
-## 2. Architecture
+It is a **screening tool, not an ROI or profitability model**: construction cost, financing
+terms and concession revenue are not public, so the honest deliverable shortlists airports on
+measurable demand pressure and delay outcomes and leaves the capital judgement to the analyst.
 
 ```
 React + TypeScript      chat pane (model narration) │ analytics pane
@@ -52,7 +26,6 @@ React + TypeScript      chat pane (model narration) │ analytics pane
         ▼                                           │
 FastAPI
   └─ Orchestrator — Claude Sonnet 5, manual tool loop (≤ 5 hops)
-       │   cached system prefix + per-turn session state
        ├─► 6 deterministic tools ──┐ compact view to model, full payload out
        └─► numeric provenance audit ┘
                   │
@@ -61,90 +34,60 @@ FastAPI
        SQLite warehouse ◄── offline ETL ◄── BTS · FAA · OurAirports
 ```
 
-The orchestrator assembles a cached system prefix plus a per-turn block (focus airports,
-last ranking, last comparison, assumptions). Claude either answers or calls tools; tool
-calls are local reads. Each result is kept in two forms — the **full payload** for the
-frontend and the audit, a **compact view** for the model — and the loop runs until the
-model stops calling tools, capped at 5 hops. The draft then goes through the numeric
-provenance audit, and the response carries the answer plus every tool call and result,
-sources, limitations, assumptions, scores, audit outcome and token usage.
+One consequence is worth naming: **the analytics pane renders from the structured response,
+never from the model's prose**. It reads the engine's own JSON, so a chart cannot disagree with
+the engine and no displayed number has passed through the model.
 
-**The analytics pane renders from that structured response, never from the model's
-prose.** It reads the engine's own JSON — scores, component breakdowns, comparison and
-indicator tables — so a chart cannot disagree with the engine, and no displayed number
-has passed through the model.
+**Data and the pinned warehouse.** Five public sources, all US federal public domain or
+explicitly dedicated to it: BTS T-100 Segment Summary (traffic), BTS On-Time Performance
+(delay), BTS T-100 Segment (per-route distance), FAA Passenger Boarding (enplanements, hub
+class) and OurAirports (runways, crosswalk). The **analysis window is pinned to 2025-05 …
+2026-04** across 401 airports, because the sources publish on different schedules and
+truncating them to one window is what stops an answer mixing vintages. The ETL runs offline and
+the built SQLite warehouse is committed, so every tool call is a local read and the same
+question returns the same numbers on any machine.
 
-One agent rather than several, because every question decomposes into *resolve airports →
-call one or two deterministic functions → narrate*. A manual loop rather than the SDK
-runner, because I needed every call captured for the API response, the audit running
-before the draft is returned, and per-turn state injection.
+## 2. Scoring methodology
 
-## 3. Data and window
+Two indices, not one. A single "investment score" would average airside congestion against
+terminal demand pressure, and those point at *different capital projects* — so the system
+computes two independent proxies and treats their **divergence** as the analytical output.
 
-Five public sources: BTS T-100 Segment Summary by Origin Airport (Socrata `r495-tyji`)
-for traffic; BTS On-Time Performance for delay; BTS T-100 Segment for per-route distance;
-FAA Passenger Boarding for enplanements and hub class; OurAirports plus FAA for runways
-and the identifier crosswalk. All are US federal public domain or carry an explicit
-public-domain dedication.
+Both are normalised by **winsorized min-max against a peer cohort** of US primary
+commercial service airports: values are clipped to the cohort's 5th–95th percentile, then
+rescaled 0–100 across that range. Clipping matters because the FAA growth column contains
+six-figure percentages from tiny airports starting near zero service, which plain min-max
+would let compress everything else to nothing. **A normalised value is not a percentile** —
+94 means "94% of the way from the cohort's P5 to its P95", not "higher than 94% of peers";
+the true percentile is reported alongside and never used in the arithmetic.
 
-**Analysis window: 2025-05 … 2026-04**, pinned in `etl/config.py` and asserted by tests.
-The sources publish on different schedules, so truncating everything to one window is
-what stops an answer silently mixing vintages. Traffic stores 24 months because
-year-over-year growth needs the prior year. Coverage runs from 100% (runways,
-enplanements) down to 59.1% ACI-eligible, and airports below the volume gate are
-**suppressed, not estimated**.
-
-The ETL runs offline and the built warehouse is committed, because the delay archives
-take over an hour to pull and the T-100 Segment source is a scraped form that can break
-without notice. That buys local-read latency, determinism, and resilience with every
-upstream source down.
-
-## 4. Scoring methodology
-
-**Why two indices, not one.** A single "investment score" would average airside
-congestion against terminal demand pressure, and those point at *different capital
-projects*. So the system computes two independent proxy indices and treats their
-**divergence** as the analytical product.
-
-**Normalisation** is winsorized min-max against a peer cohort of US primary commercial
-service airports:
-
-```
-x̃ = min(max(x, P5), P95)          n = 100 · (x̃ − P5) / (P95 − P5)
-```
-
-Winsorizing matters — the FAA enplanement-growth column holds a +126,403% value from a
-tiny airport starting near-zero service, and plain min-max would compress everything else
-to ~0. **A normalised value is not a percentile**: 94 means "94% of the way from the
-cohort's 5th to its 95th percentile", not "higher than 94% of peers". The true percentile
-is reported alongside and never used in the arithmetic.
+Missing components are never imputed: the component drops out, the remaining weights
+renormalise, coverage is reported, and below 0.60 coverage no score is produced at all.
 
 ### TDPI — Terminal Demand Pressure Index
 
-A composite proxy for passenger-handling load relative to peers. **Not** a measurement of
-terminal capacity.
+A composite proxy for how hard an airport's passenger-handling is being pushed relative to
+peers. It exists because the terminal-side question has no direct public measurement, so the
+best available answer combines the observable signals that a terminal is under load.
 
 | # | Component | Weight | Rationale |
 |---|---|---:|---|
 | T1 | Load factor | 0.20 | Level of fill; saturating, so not dominant |
 | T2 | Passenger growth YoY (like-for-like months) | 0.30 | Investment follows the trend, not the level |
-| T3 | Gauge (seats/departure) | 0.15 | Upgauging = more passengers through the same footprint; the most terminal-specific signal available |
+| T3 | Gauge (seats per departure) | 0.15 | Upgauging pushes more passengers through the same footprint; the most terminal-specific signal available |
 | T4 | Throughput per runway ⚠ **proxy** | 0.20 | Closest available stand-in for volume against physical scale |
 | T5 | Enplanement growth (FAA) | 0.15 | Independent second opinion; down-weighted because CY2025 is preliminary |
 
-**T4 carries an explicit warning** in the code, the API response and the UI: it ignores
-runway geometry and weather-dependence, and is never evidence that a terminal is full.
-**T2 is compared like-for-like** — only calendar months present in both the current and
-prior windows, and only when every window month has a prior-year counterpart; otherwise
-T2 is dropped and the weights renormalise, because an incomparable ratio is missing data
-rather than a value. Without that rule an airport whose prior year held seven passengers
-ranked 3rd of 399 on +839,571% growth.
+**What it can claim:** that an airport is under more passenger-handling pressure than its
+peers, with each component's contribution exposed. **What it cannot:** that the terminal is
+full, or that capital is warranted. T4 carries an explicit warning in the code, the API
+response and the UI, because runways are a weak stand-in for terminal size. T2 is computed
+only across calendar months present in both the current and prior year and dropped when the
+windows are not comparable, since an incomparable ratio is missing data rather than a value.
 
 ### ACI — Airside Congestion Index
 
-A composite proxy built from observed delay **outcomes**. The inputs are measured; the
-index does not measure runway or airspace capacity and does not establish that any
-constraint is binding.
+A composite proxy built from observed delay **outcomes**.
 
 | # | Component | Weight | Rationale |
 |---|---|---:|---|
@@ -153,82 +96,72 @@ constraint is binding.
 | A3 | Departures delayed >15 min | 0.25 | Contaminated by schedule padding and upstream late aircraft |
 | A4 | Cancellation rate | 0.15 | Weather-driven and lumpy; deliberately down-weighted |
 
-**Volume gate:** ACI is suppressed below 1,000 OTP flights in the window — delay rates on
-a few hundred observations are noise, and a confident score on noise is worse than no
-score. Profiles also carry a `temporal` block (monthly values, spread, the drop from
-removing the two worst months); it is **diagnostic only**, never seen by the classifier,
-and describes timing rather than cause.
+**Suppression rule:** ACI is not computed below **1,000 reported flights** in the window.
+Delay rates over a few hundred observations are noise, and a confident score on noise is
+worse than no score, so those airports are reported as *unscored with a reason* — never as
+low. About 59% of the universe is ACI-eligible; the rest are suppressed, not estimated.
+
+**What it can claim:** that flights here experience more delay than at peer airports.
+**What it cannot:** that runway or airspace capacity is the constraint, or that any
+constraint is binding. The inputs are outcomes, and an outcome does not identify its cause —
+the system says "winter-concentrated pressure", never "caused by winter weather".
 
 ### Divergence classification
 
-Screening classifications — **not recommendations or infrastructure diagnoses**. With
-τ_hi = 60, τ_lo = 40:
+The two indices are read together, because which one is elevated determines which kind of
+capital is even relevant. With thresholds at 60 and 40:
 
 | TDPI | ACI | Class |
 |---|---|---|
-| ≥60 | <40 | TERMINAL_LED — most consistent with a terminal-side question |
+| ≥60 | <40 | TERMINAL_LED — the profile most consistent with a terminal-side question |
 | ≥60 | ≥60 | SYSTEMIC |
 | <40 | ≥60 | AIRSIDE_LED |
 | <40 | <40 | NO_NEAR_TERM_CASE |
 | else | else | MIXED — read both scores, not the label |
 | any | suppressed | UNCLASSIFIED_AIRSIDE_UNKNOWN |
 
-A suppressed ACI **never** falls through to TERMINAL_LED: absence of a measurement is not
-evidence of absence, and the fall-through would be an investment signal built on a gap.
-**MIXED is the residual class**, holding whenever *at least one* index lands in the 40–60
-band — it does not mean both scores are mid-range, and BOS is MIXED with TDPI 58.6 and
-ACI 79.5. Both rules are test-enforced.
+These are screening labels, not recommendations. Two rules are test-enforced: a suppressed ACI
+**never** falls through to TERMINAL_LED, because that would be an investment signal built on a
+gap in the data; and MIXED is the residual class, holding whenever *at least one* index sits in
+the intermediate band rather than meaning both are mid-range.
 
 ### UDEI — Unmet Demand Evidence
 
-Unmet demand cannot be quantified from these datasets. UDEI returns a band and an
-indicator table, and **`UnmetDemandEvidence` has no magnitude field** — there is nowhere
-to put a fabricated number. The absence of the field is the control, not the prompt.
+Unmet demand is a counterfactual: passengers who did not book because flights were full leave no
+trace in operational data. UDEI therefore produces **qualitative evidence, not a numeric
+estimate** — five indicators and an evidence band. The result type has **no magnitude field at
+all**, so there is nowhere to put a fabricated number; the schema is the control, not the prompt.
 
 | ID | Indicator | Trigger |
 |---|---|---|
 | U1 | High load factor | ≥ cohort P75 |
 | U2 | Frequency suppression | passenger growth > 0 **and** departure growth ≤ 0 |
-| U3 | Upgauging | seats/departure up ≥ 2% YoY |
+| U3 | Upgauging | seats per departure up ≥ 2% YoY |
 | U4 | Airside throughput ceiling | ACI ≥ cohort P75 |
 | U5 | Fare premium | *unavailable — Consumer Airfare not ingested* |
 
-Band by triggered count: **0–1 Weak, 2–3 Moderate, 4+ Strong**. An indicator without data
-is reported **unavailable with a reason**, never assumed false, and each ships what a
-trigger is *consistent with* and what it *cannot establish* — phrased as consistency,
-never causation. Three limitations travel with every result:
+The band counts triggered indicators: **0–1 Weak, 2–3 Moderate, 4+ Strong**. An indicator
+without data is reported **unavailable with a reason**, never assumed false.
 
-- **U2 and U3 are not independent evidence.** Passenger growth decomposes exactly as
-  `(1 + pax) = (1 + departures) × (1 + gauge) × (1 + load factor)`, so two of them firing
-  is not two independent findings.
-- **The band uses absolute counts while the number of evaluable indicators varies.** U4
-  needs a computable ACI and U5 is unavailable everywhere, so an airport with three
-  evaluable indicators cannot reach Strong however strong its evidence. Results therefore
-  carry `available_count`, `max_attainable_triggered` and `max_attainable_band`, and the
-  counts must appear with the label.
-- **A band is not calibration.** Cohort frequencies (328 Weak, 70 Moderate, 1 Strong of
-  399) ship with a note that they are not evidence about any particular airport.
+Two limitations ship with every result. The band uses absolute counts while the number of
+*evaluable* indicators varies — U4 needs a computable ACI and U5 is unavailable everywhere —
+so an airport with only three evaluable indicators **cannot reach Strong however strong its
+evidence**. Results therefore carry the attainable ceiling alongside the band, and the counts
+must be quoted with the label. And U2 and U3 are not independent evidence: passenger growth
+decomposes exactly into departures, gauge and load factor, so two of them firing is one
+finding viewed twice.
 
 ### Long-haul
 
-**Long-haul = segment great-circle distance ≥ 3,000 statute miles**, as a share of
-departures performed rather than seats or passengers. The threshold dominates the answer —
-at ANC the share moves from 48.3% (≥1,500 sm) to 30.1% (≥3,000 sm) — so
-`long_haul_breakdown` returns a **sensitivity table with no scalar field**: the model
-cannot quote one number without its definition. Configuration matters as much, because
-passenger and all-cargo are **not exhaustive** (T-100 also codes combi and amphibious),
-and a `reconciliation` block proves the scopes partition the total. At ANC the split is
-the story: **30.1% all-carrier, 4.1% passenger-only, 51.2% freighter-only** — for a
-passenger-terminal thesis the answer is 4.1%.
+**Long-haul is a segment great-circle distance of ≥ 3,000 statute miles**, measured as a
+share of departures performed. One scope distinction is essential to interpreting it: the
+aircraft mix changes the answer completely. At Anchorage 30.1% of all departures are
+long-haul, but only **4.1% of passenger-configured** departures are, against **51.2% of
+freighters** — so for a passenger-terminal thesis the answer is 4.1%, not 30.1%. The
+threshold matters as much, so the tool returns a sensitivity table across thresholds with no
+single scalar field, and the model cannot quote a number without its definition.
 
-### Missing data
-
-Never impute — no mean-filling, carry-forward or regression fill. Weights renormalise
-over present components, coverage is reported on every score, and below 0.60 coverage the
-score is `null` with a reason. Every score carries `components[]` with raw value,
-normalised value, percentile, weight, contribution and source.
-
-## 5. Where and how AI is used
+## 3. Where and how AI is used
 
 **The LLM decides what to do and how to explain it; deterministic code decides the
 numbers.**
@@ -236,16 +169,16 @@ numbers.**
 | Claude is responsible for | Deterministic code is responsible for |
 |---|---|
 | Understanding user intent | Retrieving and aggregating the data |
-| Selecting which tools to call | Calculating TDPI, ACI and UDEI |
+| Choosing the appropriate tool | Calculating TDPI, ACI and UDEI |
 | Supplying tool arguments | Calculating rankings |
-| Maintaining conversational continuity | Calculating comparisons |
-| Interpreting the model-visible evidence | Calculating long-haul statistics |
-| Explaining results in calibrated language | Constructing unmet-demand evidence |
+| Conversational follow-ups and context | Calculating comparisons |
+| Interpreting the returned evidence | Calculating long-haul statistics |
+| Explaining the result in calibrated language | Constructing unmet-demand evidence |
 | — | Producing every analytical number |
 
-Each of the six tools is a thin wrapper over the engine. **None computes an analytical
-value** — every score, rate, growth figure and classification originates in
-`app/analytics` and passes through unchanged.
+Six tools, each a thin wrapper over the engine. **None computes an analytical value** —
+scores, rates, growth figures and classifications all originate in the analytics layer and
+pass through unchanged.
 
 | Tool | Returns |
 |---|---|
@@ -253,153 +186,92 @@ value** — every score, rate, growth figure and classification originates in
 | `get_airport_profile` | Traffic, delay, both indices, full component derivation |
 | `compare_airports` | Volume and per-flight intensity as *separate* blocks |
 | `rank_airports` | Ranked cohort with scores, classes, absolute scale |
-| `long_haul_breakdown` | Sensitivity table across thresholds × configurations |
+| `long_haul_breakdown` | Sensitivity table across thresholds and configurations |
 | `unmet_demand_evidence` | Indicator table + band, no magnitude field |
 
-Resolution is deterministic too: "Compare LA and Santa Ana" holds two traps — "LA" may
-mean LAX alone or the whole basin, and "Santa Ana" is SNA — so `resolve_airports` handles
-codes, regions, metro aliases and states in Python and reports an `ambiguous` flag, so
-the agent states the assumption aloud.
+Even airport resolution is deterministic: "Compare LA and Santa Ana" is ambiguous ("LA" may
+mean LAX or the whole basin), so resolution happens in Python and returns an ambiguity flag the
+agent must surface as a stated assumption.
 
-### Why the LLM does not calculate
+### Guardrails
 
-An LLM producing an aviation statistic is producing a *plausible-looking* number. It may
-be right; nothing in the architecture makes it right, and nothing makes it *checkably*
-right. For an investment screen a figure that cannot be audited is worse than no figure —
-it carries unearned authority. Three enforcement layers, weakest first:
+Three layers keep numbers honest, weakest first.
 
-1. **System prompt** — never compute, never state an unsourced figure.
-2. **Schema shape** — no scalar long-haul field, no unmet-demand magnitude field. The
-   model cannot report what the schema does not contain: stronger than instruction,
-   because it makes the failure impossible rather than discouraged.
-3. **Numeric provenance audit** — mechanical, post-generation.
+1. **The system prompt** tells the model never to compute and never to state an unsourced
+   figure — useful, but the weakest control.
+2. **Schema shape** makes the failure impossible rather than discouraged: no scalar long-haul
+   field, no unmet-demand magnitude field, so the model cannot report a quantity the schema
+   does not contain.
+3. **A numeric provenance audit** checks every numeral in the draft against the numbers the
+   engine returned this session, tolerating rounding and natural rescalings, with the pool
+   limited to what the model was shown. On failure it makes **one regeneration attempt**,
+   framed as an automated check rather than a user correction — told it was the user, the model
+   apologises for something the user never said. If the retry also fails, the answer is a
+   template rendered from tool output: correctness over prose.
 
-### Numeric provenance audit
+The model view is also compacted, shipping only what is needed to narrate while the full
+payload still reaches the frontend and the audit — a two-representation split, not a truncation.
 
-Every numeral in a draft answer is checked against the numbers the engine returned this
-session — forgiving where it does not matter (rounding, natural scalings, years and small
-ordinals ignored) and strict where it does. The pool is every number in a remembered
-payload **minus the parts the model never saw**. On failure: **one regeneration**, with
-the correction framed as an automated check rather than a user message, because phrased as
-a user correction the model apologises for something the user never said. If that also
-fails, the answer is a template rendered from tool output — correctness over prose.
+**Provenance is not semantic correctness.** The audit proves a number *exists* in the data; it
+cannot prove the number belongs in that sentence. A figure can trace cleanly and still be wrong
+for the claim, and a derived value can coincidentally match an unrelated number and pass. That
+is why the no-calculation rule is also enforced by schema shape — the audit is the last line,
+not the only one.
 
-**What it cannot do.** It establishes provenance, **not semantic correctness** — that a
-number *exists* in the data, not that it is the right number for the sentence. §6 has a
-measured example.
+## 4. Key tradeoffs and limitations
 
-### Compact model view, session state, caching
+| Decision                              | Why                                                                                            | Limitation / production direction                                      |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Calculations in Python, not the model | Reproducible and auditable; a plausible-looking statistic is worse than none                   | Model cannot answer anything the tools do not expose                   |
+| Two proxy indices + divergence        | A single score hides whether terminal capital is even the right instrument                     | Both are cohort-relative proxies, not capacity measurements            |
+| Offline ETL, committed warehouse      | Deterministic scoring, reproducible evaluation, stable demos                                   | Data is a pinned snapshot; production would schedule ingestion (below) |
+| Single agent, manual tool loop        | No number would change with a multi-agent crew; needed call capture, audit and state injection | More orchestration code owned directly                                 |
+| Compact model view                    | Large token reduction with no analytical loss                                                  | Model sees less raw detail than the frontend                           |
+| Claude Sonnet 5                       | Measured semantic regression on the cheaper alternative                                        | See model choice below                                                 |
+| In-process session store              | Zero external services for a prototype                                                         | Not durable; production needs a shared store (below)                   |
 
-Sources and limitations are identical on every tool result, so they live in the cached
-prefix rather than riding along with each payload, and per-tool **compact views** ship
-only what the model needs to narrate. Measured on a fixed replay harness: input tokens
-**679,153 → 112,818 (−83.4%)**, tool payload **230,996 → 24,441 chars (−89.4%)**. The
-full payload still reaches the frontend and the audit — a two-representation split, not a
-truncation.
+**Proxy metrics versus real capacity.** TDPI and ACI are screening proxies. The system does
+not directly measure terminal capacity, gate capacity, runway capacity, or project
+ROI/profitability. Public aviation data is good at *realised* quantities — passengers, seats,
+departures, taxi-out, delay — because carriers must report them, but it is silent on the
+physical plant: no public source I verified publishes gate counts, holdroom area or baggage
+throughput, declared capacity rates sit behind a login, and cost and revenue data are
+commercial. Observable pressure and outcomes therefore support a defensible shortlist while
+capacity, causation and profitability do not. Proxy evidence is also not causal proof — an
+elevated index is consistent with a constraint, never a demonstration of one.
 
-**Prompt caching:** the static prefix carries an ephemeral `cache_control` breakpoint and
-is byte-identical across every request in a session, including the regeneration retry, so
-later turns read it from cache instead of re-paying input rate.
+**Unmet demand.** Observed public data can show evidence consistent with constrained supply
+but cannot quantify latent flights or passengers. UDEI makes that boundary structural rather
+than advisory, which is why the result type carries no magnitude field.
 
-**Session state:** each session holds `messages` (trimmed to 12 real turns),
-`focus_airports`, `last_ranking`, `last_comparison`, `assumptions` and `known_numbers`,
-injected as a volatile block after the cached prefix. Trimming counts **turn boundaries,
-not messages** — a tool-using turn is four or more messages, so a message budget kept
-only about six turns and follow-ups lost the tool result they referred to.
-
-**Failure handling** always degrades to a narrower true answer: a missing metric drops
-its component and renormalises, sub-gate ACI is suppressed, a tool exception returns a
-structured error the model must describe, and the loop halts at 5 hops saying what it
-could not finish. **If the LLM is unavailable, `/analytics/*` still serve every figure and
-the UI shows an error — it never fabricates an answer.**
-
-## 6. Tradeoffs and limitations
-
-| Decision | Chosen | Given up | Why |
-|---|---|---|---|
-| Offline ETL, committed warehouse | ✔ | Live freshness | Slow upstream fetches; data already 2–5 months lagged |
-| Single agent + tools | ✔ | Multi-agent sophistication | No number would change; adds latency and failure modes |
-| SQLite | ✔ | Postgres/DuckDB | Zero-install, single file, sufficient at this volume |
-| Two indices + divergence | ✔ | One tidy leaderboard | A single score hides whether terminal capital is even the right instrument |
-| Winsorized min-max | ✔ | Pure percentile rank | Preserves magnitude; cost is cohort-relativity, documented |
-| Manual tool loop | ✔ | SDK tool runner | Needed call capture, audit and state injection |
-| Numeric audit | ✔ | Build time | Turns "deterministic, not LLM output" into a demonstrable property |
-| Compact model view | ✔ | Model sees less detail | 83% fewer tokens; full payload still reaches the frontend and audit |
-| Claude Sonnet 5 | ✔ | ~2.5× lower cost on Haiku 4.5 | Measured semantic regression where the LLM matters here |
-| In-process session store | ✔ | Durability, multi-process | Right for a prototype; production path below |
-
-**What the system does not do**, stated once and enforced throughout: TDPI is not terminal
-capacity; ACI is not physical airside capacity and identifies no cause; UDEI does not
-quantify unmet demand; nothing here calculates ROI or profitability.
-
-**Proxy metrics vs infrastructure capacity.** Public aviation data is good at *realised*
-quantities — passengers, seats, departures, taxi-out, NAS delay, cancellations — because
-carriers must report them. It is silent on the physical plant: no public source I verified
-publishes gate counts, holdroom area, checkpoint lanes or baggage throughput, and declared
-capacity rates sit behind a login. So observable pressure and outcomes support a
-defensible shortlist, while capacity, causation and profitability do not — claiming the
-stronger version would mean inventing the inputs.
-
-**Deterministic analytics vs LLM flexibility.** Calculation lives in Python because a
-number has to be reproducible and auditable. Orchestration and explanation live in the
-model because mapping a question onto tool calls, resolving "the second one" three turns
-later, and explaining a suppressed index in calibrated prose are exactly what rigid code
-is bad at. Giving up model-side arithmetic costs nothing analytically — every figure it
-might compute already exists in a tool result — and buys the property that any number in
-an answer can be traced.
-
-**Session persistence.** `SessionStore` is a plain in-process dictionary: sessions are
-**held in memory, lost on backend restart, and visible only to the process that created
-them**. For a prototype that is the right trade, keeping the deliverable to two commands
-with no external service. It is explicitly **not the production architecture**, which
-would put it behind an interface backed by a durable shared store (Redis or a database),
-with a TTL and sessions tied to an authenticated user rather than resting on id secrecy.
-
-**Model choice — Sonnet 5, on measured evidence.** Production runs Claude Sonnet 5. Before
-freezing I compared **Claude Haiku 4.5** on five difficult scenarios from the existing
-evaluation bank, holding the prompt, tools, analytics, data, sessions and audit constant.
-Haiku was materially cheaper and handled tool selection, arguments and three-turn
-conversational context correctly. It regressed where the LLM carries weight here: it
-misread the UDEI band mechanism, treating data availability as moving a band *threshold*
-when what availability changes is the attainable *ceiling*, and **it derived a percentage
-against the explicit no-calculation rule**. That figure is also the clearest demonstration
-of the audit's limit — the wrong value passed provenance because it coincidentally matched
-an unrelated number in the same payload. (Haiku 4.5 also rejects the production
-`output_config` effort parameter.) **Retained Sonnet 5** — evidence-based for this project
-and this sample. Five scenarios do not establish statistical superiority, general model
-quality or production equivalence, and nothing here says Sonnet is universally better or
-Haiku generally unreliable. Results: `backend/evaluation/compare_haiku.json`.
-
-## 7. Production direction
-
-**Data freshness.** The pinned snapshot is a deliberate take-home choice: one frozen
-window buys deterministic scoring, reproducible evaluation, and debugging where a changed
-number means a changed calculation rather than changed upstream data. A production version
-would separate ingestion from serving:
+**Pinned warehouse versus live data.** Freezing one window buys reproducibility, deterministic
+evaluation and stable demos, and makes debugging tractable — a changed number means a changed
+calculation, not changed upstream data. For production the direction is to separate ingestion
+from serving:
 
 ```
 public sources → scheduled ingestion → validation →
 versioned snapshot → atomic promotion → analytics / agent
 ```
 
-Cadence follows each source's own publication frequency — BTS monthly releases, the FAA
-workbook and reference data update on different and much slower schedules, so a uniform
-cadence would be wrong. Serving keeps reading the current promoted snapshot, so a failed
-or half-finished ingest can never be what a user queries. The operational work that comes
-with it: retries, freshness monitoring, schema-drift detection, data-quality validation
-before promotion, versioned snapshots for rollback, and atomic promotion. None of it is
-implemented here.
+Cadence follows each source's publication frequency rather than a uniform schedule, and serving
+keeps reading the last promoted snapshot so a failed ingest is never what a user queries.
 
-**Voice interaction (bonus, shipped).** Implemented on the browser's Web Speech APIs:
-**speech-to-text** for asking a question and **text-to-speech** playback of an answer. A
-transcript enters the composer for review and then takes the same `POST /chat` path as
-typed text, with no voice-specific code path and no audio reaching the backend. It is
-deliberately **not** a realtime or full-duplex voice agent and not speech-to-speech — no
-continuous listening, no wake word. English (`en-US`) only.
+**Session persistence.** Sessions live in an in-process dictionary — held in memory, lost on
+restart, visible only to the process that created them — which is the right trade for a
+prototype with no external services. Production would put the store behind an interface backed
+by Redis or a database, with a TTL and sessions tied to an authenticated user.
 
-**Analytical next steps.** Ingest BTS Consumer Airfare to activate UDEI's U5 indicator;
-curate airside capacity constants from FAA Airport Capacity Profiles, moving ACI closer to
-a genuine utilisation measure; publish a weight-sensitivity analysis so the judgement in
-the weights is explicit. One caveat on all of it: there is **no ground truth** — no
-dataset records which airports actually needed terminal investment, so no formulation
-here, including the shipped one, has been validated against outcomes.
+**Model choice.** Production runs **Claude Sonnet 5**. I compared **Claude Haiku 4.5** on five
+difficult scenarios from the existing evaluation bank, holding prompt, tools, analytics, data,
+sessions and audit constant. Haiku was materially cheaper and handled tool selection and
+multi-turn context well, but showed meaningful semantic regressions: it misread the UDEI band
+mechanism, treating data availability as moving a band threshold rather than the attainable
+ceiling, and it derived a percentage against the no-calculation rule. That derived number also
+demonstrated that numeric provenance is not semantic validation — the wrong value passed the
+audit because it coincidentally matched an unrelated number. **Sonnet was retained** for this
+project and this sample; five scenarios do not establish universal model superiority.
+
+**Voice (bonus).** Browser speech-to-text input and text-to-speech playback are implemented
+as the assignment's optional bonus, with the transcript taking the ordinary chat path. It is
+not a realtime or full-duplex voice agent.
