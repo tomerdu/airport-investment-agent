@@ -225,8 +225,6 @@ wake word.
   takes the *same* `POST /chat` path as typed text. A transcript is ordinary
   untrusted input with no special authority — same validation, same narrow tools,
   same numeric audit, no voice-specific code path.
-- **Read answer** — a button on each answer speaks the visible reply. One at a
-  time, never automatically.
 
 The backend is untouched: no endpoint, no dependency, no speech key, and it
 **never receives or stores audio**. Recognition happens in the browser, which is
