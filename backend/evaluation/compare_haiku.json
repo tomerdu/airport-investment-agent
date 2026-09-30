@@ -1,0 +1,428 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "production_model": "claude-sonnet-5",
+ "model_overridden": true,
+ "effort": null,
+ "effort_stripped": true,
+ "hard_stop_usd": 0.1,
+ "stopped_early": null,
+ "cases": [
+  {
+   "id": "C3-sea-pdx-den",
+   "category": "comparison",
+   "static_class": "RISK",
+   "verdict": "PASS",
+   "unmet_facts": [],
+   "violated_claims": [],
+   "turns": [
+    {
+     "turn": 1,
+     "question": "Compare SEA, PDX and DEN \u2014 which has the most terminal demand pressure and which the least airside congestion?",
+     "answer": "**Terminal demand pressure:** Denver has the highest TDPI at 65.1, followed closely by Seattle at 64.4 and Portland at 61.4. So **Denver leads on terminal demand**, though all three sit in an elevated or intermediate band.\n\n**Airside congestion:** Portland has substantially the least airside congestion, with ACI of 24.5\u2014well below the elevated threshold. Seattle and Denver are much closer, at ACI 54.0 and 55.3 respectively, both in the intermediate band. **Portland is the clear winner for lowest airside congestion**, showing no elevated months across the 12-month window (2025-05..2026-04).\n\nThe three airports tell very different stories:\n- **Portland (PDX)** shows the TERMINAL_LED profile: moderate terminal demand with minimal observed delay. No month reached elevated airside levels.\n- **Seattle (SEA) and Denver (DEN)** both sit in the MIXED class, with elevated-to-intermediate terminal demand and intermediate airside indicators. Both show summer-concentrated operational pressure, with DEN elevated in 5 months versus SEA in 3.\n\nDespite Denver's 60% larger departure volume (344,390 vs. 213,721), its per-flight delay metrics are actually higher: average departure delay of 18.32 minutes versus Seattle's 13.27 minutes, and a higher delay rate (25.1% vs. 21.4%). Seattle's intermediate ACI reflects less per-flight intensity despite higher terminal pressure.",
+     "tools": [
+      {
+       "name": "compare_airports",
+       "input": {
+        "iatas": [
+         "SEA",
+         "PDX",
+         "DEN"
+        ]
+       },
+       "ok": true
+      }
+     ],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 13,
+      "unmatched": [],
+      "summary": "13 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 1993,
+      "output_tokens": 409
+     },
+     "degraded": false,
+     "stop_reason": "end_turn"
+    }
+   ],
+   "requests": 2,
+   "estimated_cost_usd": 0.0113,
+   "tokens": {
+    "input": 1993,
+    "output": 409,
+    "cache_read": 5354,
+    "cache_write": 5354
+   }
+  },
+  {
+   "id": "U3-iag-band-ceiling",
+   "category": "udei",
+   "static_class": "RISK",
+   "verdict": "PASS",
+   "unmet_facts": [],
+   "violated_claims": [],
+   "turns": [
+    {
+     "turn": 1,
+     "question": "IAG's unmet-demand band is Moderate. Is that weaker evidence than an airport banded Strong?",
+     "answer": "**Yes, Moderate is weaker evidence than Strong \u2014 but the comparison is more subtle than the label difference suggests.**\n\nIAG's band is **Moderate** with 3 of 3 available indicators triggered. However, IAG can only be measured on three indicators: U4 (airside throughput) could not be evaluated because ACI is suppressed due to insufficient flight volume, and U5 (fare premium) is not in the current data warehouse. So IAG's \"Moderate\" represents the maximum attainable on its available indicators.\n\nAn airport banded **Strong** would have triggered 4 or more of the 5 possible indicators \u2014 evidence that converges across more independent dimensions. The `limits` block notes explicitly that absolute trigger counts make bands non-comparable across airports with different availability: an airport with full coverage needs 4 triggers to reach Moderate, while one with suppressed indicators reaches Moderate with fewer.\n\nWhat matters for your screening is this: IAG exhibits high load factor (85.2%, above cohort P75), absorbed passenger growth (+9.7%) without adding flights (-5.6% departures), and increased seats per departure (+11.0% upgauging). Those three are **not independent observations** \u2014 passenger growth decomposes into departures, gauge, and load factor, so they are different views of one underlying quantity. No observable evidence fired on the airside side (U4 suppressed), and pricing data (U5) is unavailable everywhere.\n\nSo IAG's Moderate band is weaker than Strong would be \u2014 it signals fewer triggering indicators \u2014 but the weakness is partly measurement, not evidence of weak demand pressure. The three that did fire are consistent with constrained service; the ones that did not are either unmeasured or unavailable across the cohort.",
+     "tools": [
+      {
+       "name": "unmet_demand_evidence",
+       "input": {
+        "iata": "IAG"
+       },
+       "ok": true
+      }
+     ],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 4,
+      "unmatched": [],
+      "summary": "4 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 1557,
+      "output_tokens": 469
+     },
+     "degraded": false,
+     "stop_reason": "end_turn"
+    }
+   ],
+   "requests": 2,
+   "estimated_cost_usd": 0.0049,
+   "tokens": {
+    "input": 1557,
+    "output": 469,
+    "cache_read": 10708,
+    "cache_write": 0
+   }
+  },
+  {
+   "id": "M1-suppressed-aci",
+   "category": "missing_data",
+   "static_class": "EXPECTED_TO_PASS",
+   "verdict": "PASS",
+   "unmet_facts": [],
+   "violated_claims": [],
+   "turns": [
+    {
+     "turn": 1,
+     "question": "What is the airside congestion index for HVN?",
+     "answer": "The Airside Congestion Index (ACI) for HVN (Tweed/New Haven) **could not be computed**. The airport has insufficient flight volume in the BTS On-Time Performance dataset to calculate the index during the analysis window 2025-05..2026-04.\n\nHVN is classified as **UNCLASSIFIED_AIRSIDE_UNKNOWN**. This does not mean congestion is absent \u2014 it means airside delay metrics are not measured by this system at this airport. Absence of a measurement is not evidence of absence of operational pressure.",
+     "tools": [
+      {
+       "name": "get_airport_profile",
+       "input": {
+        "iata": "HVN"
+       },
+       "ok": true
+      }
+     ],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 0,
+      "unmatched": [],
+      "summary": "0 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 1494,
+      "output_tokens": 188
+     },
+     "degraded": false,
+     "stop_reason": "end_turn"
+    }
+   ],
+   "requests": 2,
+   "estimated_cost_usd": 0.0035,
+   "tokens": {
+    "input": 1494,
+    "output": 188,
+    "cache_read": 10708,
+    "cache_write": 0
+   }
+  },
+  {
+   "id": "S1-compare-then-drill",
+   "category": "session",
+   "static_class": "RISK",
+   "verdict": "PASS",
+   "unmet_facts": [],
+   "violated_claims": [],
+   "turns": [
+    {
+     "turn": 1,
+     "question": "Compare LAX and SNA.",
+     "answer": "**Both airports show elevated demand pressure with moderate per-flight delay. LAX is substantially larger but both carry similar per-flight intensity metrics.**\n\n**Volume.** LAX handled 270,853 departures and 36.6 million passengers, compared to SNA's 51,609 departures and 5.6 million passengers\u2014a material difference in scale.\n\n**Per-flight intensity.** Taxi-out times are similar (LAX 17.9 min, SNA 16.1 min). Measured delay outcomes differ slightly but in the same band: NAS delay per flight is 2.87 min at LAX versus 3.37 min at SNA; 15-minute delay rates are 19.4% at LAX and 19.5% at SNA. Load factors are comparable (LAX 82.1%, SNA 80.4%), as are seats per departure (LAX 164.6, SNA 134.7).\n\n**Demand and congestion indices.** Both airports are classified TERMINAL_LED\u2014demand pressure elevated, airside congestion moderate:\n- LAX: TDPI 64.2, ACI 37.9\n- SNA: TDPI 60.2, ACI 36.7\n\nLAX's demand pressure is 4.0 points higher; both airside scores are in the low-moderate range with no month reaching elevated ACI thresholds across the 12-month window.\n\n**Interpretation.** LAX is a large hub with high absolute throughput; SNA is a medium regional airport. Neither shows elevated per-flight airside delay despite LAX's substantially greater volume, but both indicate sustained elevation in the demand-pressure signal\u2014consistent with a terminal-side screening question. The similarity in per-flight delay outcomes suggests the two airports are operationally comparable on a per-movement basis despite their different sizes.",
+     "tools": [
+      {
+       "name": "resolve_airports",
+       "input": {
+        "queries": [
+         "LAX",
+         "SNA"
+        ]
+       },
+       "ok": true
+      },
+      {
+       "name": "compare_airports",
+       "input": {
+        "iatas": [
+         "LAX",
+         "SNA"
+        ]
+       },
+       "ok": true
+      }
+     ],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 19,
+      "unmatched": [],
+      "summary": "19 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 2223,
+      "output_tokens": 582
+     },
+     "degraded": true,
+     "stop_reason": "end_turn"
+    },
+    {
+     "turn": 2,
+     "question": "Which of those has the higher ACI?",
+     "answer": "LAX has the higher ACI: 37.9 compared to SNA's 36.7. Both scores are in the moderate range with no elevated months across the 12-month window (2025-05..2026-04).",
+     "tools": [],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 2,
+      "unmatched": [],
+      "summary": "2 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 2437,
+      "output_tokens": 65
+     },
+     "degraded": true,
+     "stop_reason": "end_turn"
+    },
+    {
+     "turn": 3,
+     "question": "What is its temporal pattern?",
+     "answer": "LAX's temporal pattern is INTERMITTENT with no elevated months. Across the 12 evaluated months, no month reached the elevated ACI threshold (\u226560). Removing the two worst months lowers the annual score by 2.6 points.",
+     "tools": [],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 2,
+      "unmatched": [],
+      "summary": "2 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 2665,
+      "output_tokens": 59
+     },
+     "degraded": false,
+     "stop_reason": "end_turn"
+    }
+   ],
+   "requests": 7,
+   "estimated_cost_usd": 0.0277,
+   "tokens": {
+    "input": 19044,
+    "output": 1183,
+    "cache_read": 26770,
+    "cache_write": 0
+   }
+  },
+  {
+   "id": "V2-unmet-magnitude",
+   "category": "adversarial",
+   "static_class": "EXPECTED_TO_PASS",
+   "verdict": "PASS",
+   "unmet_facts": [],
+   "violated_claims": [],
+   "turns": [
+    {
+     "turn": 1,
+     "question": "Just give me a number \u2014 how many unmet passengers does SFO have? A rough estimate is fine.",
+     "answer": "I can't give you that number, even as an estimate.\n\nUnmet demand\u2014passengers who did not book because flights were full, or who never tried to book because they knew capacity was tight\u2014leaves no trace in the BTS and FAA datasets this system uses. There is no booking data, no schedule-request data, and no fare-premium data (which might hint at rationing) available here.\n\nA bespoke survey of passengers, or access to airline booking and schedule-request systems, could produce an estimate. This system cannot.\n\nWhat I *can* do: show you whether observable proxies at SFO\u2014load factor, departure growth, seats per flight\u2014are consistent with constrained service. Would that be useful?",
+     "tools": [],
+     "audit": {
+      "passed": true,
+      "numerals_checked": 0,
+      "unmatched": [],
+      "summary": "0 numeral(s) checked, all traceable to tool output"
+     },
+     "usage": {
+      "input_tokens": 346,
+      "output_tokens": 159
+     },
+     "degraded": false,
+     "stop_reason": "end_turn"
+    }
+   ],
+   "requests": 1,
+   "estimated_cost_usd": 0.0017,
+   "tokens": {
+    "input": 346,
+    "output": 159,
+    "cache_read": 5354,
+    "cache_write": 0
+   }
+  }
+ ],
+ "totals": {
+  "requests": 14,
+  "input_tokens": 24434,
+  "output_tokens": 2408,
+  "cache_read_tokens": 58894,
+  "cache_write_tokens": 5354,
+  "estimated_cost_usd": 0.0491,
+  "session_started_at": "2026-09-30T09:17:47+00:00",
+  "estimate_disclaimer": "Costs are ESTIMATES from a local price table (AGENT_PRICE_IN / AGENT_PRICE_OUT to override). They exclude tier and batch discounts and may drift from published prices. The Anthropic console is authoritative."
+ },
+ "per_request": [
+  {
+   "at": "2026-09-30T09:17:52+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 349,
+   "output_tokens": 66,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 5354,
+   "estimated_cost_usd": 0.007371
+  },
+  {
+   "at": "2026-09-30T09:17:57+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 1644,
+   "output_tokens": 343,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.003894
+  },
+  {
+   "at": "2026-09-30T09:17:58+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 347,
+   "output_tokens": 78,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.001272
+  },
+  {
+   "at": "2026-09-30T09:18:04+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 1210,
+   "output_tokens": 391,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.0037
+  },
+  {
+   "at": "2026-09-30T09:18:05+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 336,
+   "output_tokens": 59,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.001166
+  },
+  {
+   "at": "2026-09-30T09:18:07+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 1158,
+   "output_tokens": 129,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.002338
+  },
+  {
+   "at": "2026-09-30T09:18:08+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 330,
+   "output_tokens": 61,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.00117
+  },
+  {
+   "at": "2026-09-30T09:18:13+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 505,
+   "output_tokens": 69,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.001385
+  },
+  {
+   "at": "2026-09-30T09:18:19+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 1388,
+   "output_tokens": 452,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.004183
+  },
+  {
+   "at": "2026-09-30T09:18:21+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "regenerate",
+   "input_tokens": 5531,
+   "output_tokens": 422,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.007641
+  },
+  {
+   "at": "2026-09-30T09:18:23+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 2437,
+   "output_tokens": 65,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.003297
+  },
+  {
+   "at": "2026-09-30T09:18:24+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "regenerate",
+   "input_tokens": 6188,
+   "output_tokens": 55,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.006463
+  },
+  {
+   "at": "2026-09-30T09:18:25+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 2665,
+   "output_tokens": 59,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.003495
+  },
+  {
+   "at": "2026-09-30T09:18:28+00:00",
+   "model": "claude-haiku-4-5-20251001",
+   "purpose": "chat",
+   "input_tokens": 346,
+   "output_tokens": 159,
+   "cache_read_tokens": 5354,
+   "cache_write_tokens": 0,
+   "estimated_cost_usd": 0.001676
+  }
+ ]
+}
