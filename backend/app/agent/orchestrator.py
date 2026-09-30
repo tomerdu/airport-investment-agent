@@ -401,7 +401,9 @@ class Orchestrator:
 
         if not audit.ok:
             log.warning("numeric audit failed: %s", audit.summary)
-            draft, audit, degraded = self._regenerate(session, payloads, audit)
+            draft, audit, degraded = self._regenerate(
+                session, payloads, audit, system=system
+            )
 
         session.messages.append({"role": "assistant", "content": draft})
         session.trim()
@@ -430,13 +432,27 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def _regenerate(
-        self, session: Session, payloads: list[Any], first: AuditResult
+        self,
+        session: Session,
+        payloads: list[Any],
+        first: AuditResult,
+        *,
+        system: list[dict[str, Any]],
     ) -> tuple[str, AuditResult, bool]:
         """One retry, then a templated fallback rendered from tool output.
 
         The retry instruction is phrased as an automated check rather than a
         user correction — otherwise the model opens its rewrite by apologising
         to the user for something the user never said.
+
+        `system` is the SAME block list the failed generation used, passed in
+        rather than rebuilt. Phase 9 measured the cost of not doing this: the
+        retry sent `SYSTEM_PROMPT` alone with no `cache_control`, so it (a) paid
+        full input rate for a prefix already cached — 13.5% of that run's total
+        cost in one of fourteen requests — and (b) ran WITHOUT the data-context
+        and standing-limitations blocks, and without the conversation-state
+        block. A correction step that sees less than the draft it is correcting
+        is the part that actually mattered.
         """
         session.messages.append({
             "role": "user",
@@ -456,7 +472,7 @@ class Orchestrator:
                 purpose="regenerate",
                 model=self.model,
                 max_tokens=config.MAX_TOKENS,
-                system=[{"type": "text", "text": SYSTEM_PROMPT}],
+                system=system,
                 messages=session.messages,
                 output_config={"effort": config.EFFORT},
             )
