@@ -8,12 +8,21 @@
 # Idempotent: an already-complete file is skipped, so this can be re-run safely.
 
 param(
-    [string]$OutDir      = "C:\Users\Tomer\Desktop\brain\02-Projects\airport-investment-agent\data\raw\otp",
+    [string]$OutDir,
     [int]   $Parallel    = 3
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
+
+# Default output is <repo>/data/raw/otp — the same directory `etl/config.py`
+# derives as RAW_OTP_DIR, which `parse_otp.aggregate_window()` globs for
+# `otp_*.zip`. Resolved from this script's own location rather than hardcoded, so
+# it works in any clone and from any working directory. Override with -OutDir.
+if (-not $OutDir) {
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    $OutDir   = Join-Path $repoRoot 'data\raw\otp'
+}
 
 # Analysis window: May 2025 .. April 2026 (12 months), per approved decision.
 $months = @()

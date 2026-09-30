@@ -562,8 +562,21 @@ slot-constrained peers band Moderate while SFO bands Weak. The honest answer is
 that the evidence points away from a binding constraint.
 
 **11. How would you benchmark Sonnet against Haiku here?**
-I have not, so I would not claim a quality difference. The method the codebase
-already supports: the four exam questions are a fixed checklist in
+**Done — see the model-choice subsection of `design-document.md` §11.** A
+controlled five-scenario comparison against **Claude Haiku 4.5**, reusing the
+Phase 9 evaluation bank with the prompt, tools, analytics, sessions and audit held
+constant. Haiku was materially cheaper on the sample and correct on tool
+selection, conversational context and several guardrails, but regressed on
+calibrated interpretation — it misread the UDEI band mechanism (treating data
+availability as moving a band threshold rather than the attainable ceiling) and
+derived a percentage against the no-calculation rule, which the provenance audit
+passed only because the value coincidentally matched an unrelated number. It also
+rejects the production `output_config` effort parameter. **Decision:
+RETAIN_SONNET** — semantic/calibration regression despite the lower cost, for
+this project and this sample; five scenarios prove nothing general.
+
+The method below is what that run used, and the rest still applies for a larger
+benchmark: the four exam questions are a fixed checklist in
 `smoke_test.py`, each with explicit acceptance criteria ("reports U5 as
 unavailable, not as not-triggered"). Because the analytics are deterministic, the
 *tool results* are identical across models, so the only variable is the narration
@@ -693,7 +706,7 @@ Ranked by interview value × necessity ÷ risk.
 | 3 | Put `tools` in the cached prefix alongside the system text | Medium — a clean, measurable token win | Low | Nice |
 | 4 | Add a token-based history budget beside the turn count | Medium — names a real limitation and fixes it | Low | Nice |
 | 5 | Extract `SessionStore` behind an interface (no Redis yet) | Medium — shows the seam without adding infrastructure | Low | Nice |
-| 6 | Run the §H.11 Sonnet/Haiku benchmark and publish the table | High **if** there is time; the method is already defensible | Medium — costs live API calls | Optional |
+| ~~6~~ | ~~Run the §H.11 Sonnet/Haiku benchmark~~ | — | — | **DONE** — Haiku 4.5 on five scenarios; **RETAIN_SONNET** (calibration regression despite lower cost) |
 | 7 | Ingest BTS Consumer Airfare for U5 | High analytically | Medium — new ETL path, new failure modes | Later |
 | 8 | Modularise the three domain prompt blocks | Low — small saving, real risk | Medium | Later |
 
