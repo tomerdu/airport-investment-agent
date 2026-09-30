@@ -36,7 +36,7 @@ fails loudly instead of quietly billing. `pytest.ini` additionally deselects
 | `python smoke_test.py --confirm` | 4–8 | One per question, plus at most one regeneration each |
 | `python smoke_test.py --confirm --only N` | 1–2 | A single question |
 | `python measure_tokens.py` | 8 `count_tokens` | Counting only — no generation, so no output-token charge |
-| `python demo_phase3.py` | 8–16 | The full 8-turn demo |
+| `python -m evaluation.run_live --confirm` | up to 14 | Cost-capped live evaluation sample; refuses without `--confirm` |
 | `POST /chat` (the browser UI) | 1–2 per message | Each chat message |
 | `pytest -m live` | varies | No live tests exist today |
 
@@ -124,9 +124,8 @@ authoritative.**
 | `preflight --live` | < $0.001 |
 | One chat message | $0.02 – $0.05 |
 | `smoke_test.py --confirm` (4 questions) | $0.10 – $0.20 |
-| `demo_phase3.py` (8 turns) | $0.35 – $0.45 |
+| `evaluation.run_live --confirm` (6 cases) | ~$0.13, hard-capped at $0.20 |
 | `measure_tokens.py` | negligible (counting only) |
 
-The Phase 4 payload optimisation cut input tokens ~83%, so these are already
-far below where they started (the pre-optimisation 8-turn demo cost roughly
-5× the current one).
+The payload optimisation cut input tokens ~83%, so these are already far below
+where they started — roughly 5× lower than before the compact model view.

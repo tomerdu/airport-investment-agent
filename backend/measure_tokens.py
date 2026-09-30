@@ -25,8 +25,9 @@ from app.agent.prompts import SYSTEM_PROMPT, session_state_block
 from app.agent.tools import TOOL_SCHEMAS, ToolBox
 from app.analytics import AnalyticsEngine
 
-# One scenario, fixed. Mirrors demo_phase3.py: four assignment questions
-# followed by four conversational follow-ups.
+# One scenario, fixed: the four assignment questions followed by four
+# conversational follow-ups. Fixed so before/after measures the change rather
+# than model variance.
 SCENARIO: list[tuple[str, str, list[tuple[str, dict]]]] = [
     ("Q1", "Which airports in New England are strong candidates for terminal expansion?",
      [("resolve_airports", {"queries": ["New England"]}),

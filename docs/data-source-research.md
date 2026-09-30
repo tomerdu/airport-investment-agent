@@ -104,7 +104,7 @@ Columns that matter: `Origin`, `Dest`, `FlightDate`, `DepDelayMinutes`, `DepDel1
 - **Reporting carriers only** — carriers at/above the DOT revenue threshold. Regional flying appears only when the reporting carrier files it.
 - **No all-cargo carriers.** This is why ANC shows 2,513 flights here but 6,872 departures/month in T-100 Segment: OTP simply cannot see FedEx/UPS/Atlas/Kalitta.
 
-⚠️ **Measured throughput problem.** Two independent samples on 2026-09-27: the 31.5 MB July file took **453 s (71 KB/s)**; the 30.1 MB June file took **313 s (99 KB/s)**. So ~**70–100 KB/s sustained**, i.e. 5–7.5 min per month-file and **60–90 min for a 12-month pull**. This is a stable property of the BTS host, not a transient — it is a real schedule constraint, see `implementation-plan.md`.
+⚠️ **Measured throughput problem.** Two independent samples on 2026-09-27: the 31.5 MB July file took **453 s (71 KB/s)**; the 30.1 MB June file took **313 s (99 KB/s)**. So ~**70–100 KB/s sustained**, i.e. 5–7.5 min per month-file and **60–90 min for a 12-month pull**. This is a stable property of the BTS host, not a transient — it is a real schedule constraint, and it is why the ETL is offline and the warehouse is committed.
 
 ### 2.3 BTS T-100 Segment (All Carriers) — scripted download ⭐ primary for long-haul
 

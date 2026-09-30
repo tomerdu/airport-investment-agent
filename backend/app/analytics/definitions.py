@@ -119,8 +119,8 @@ TDPI_METRICS: list[MetricDef] = [
 #     is dropped from the composite. It is still computed and reported as
 #     context.
 #
-# The weights below are HYPOTHESES under evaluation, not settled methodology.
-# See docs/phase-8.1-tdpi-v2-evaluation.md.
+# The weights below are HYPOTHESES that were evaluated and NOT adopted; v1
+# remains the production formulation. Retained because the tests pin them.
 
 # Eligibility: shape metrics need enough months to have a shape at all.
 MIN_YOY_MONTHS_FOR_SUSTAINED = 8   # of 12 possible month-pairs
@@ -163,8 +163,8 @@ MIN_MONTHS_FOR_PEAK = 10           # of 12 window months
 # is FAA annual enplanements — a different source with its own coverage
 # characteristics and no monthly series to align.
 #
-# Measured effect on the current warehouse: 5 of 399 airports change; see
-# docs/phase-8.1c-tdpi-decision-and-comparability.md.
+# Measured effect on the current warehouse: 5 of 399 airports change. Pinned by
+# backend/tests/test_yoy_comparability.py.
 # ---------------------------------------------------------------------------
 
 SEASONALITY_WARN_RATIO = 2.0       # peak/mean above this is strongly seasonal

@@ -146,7 +146,8 @@ $$
 >
 > **Measured effect:** 5 of 399 airports change. GUF falls from rank 3 to 35;
 > GST and KLW lose T2 (ranks 373→388, 367→375); BGM and BLD keep a corrected
-> ratio. Full evidence in `phase-8.1c-tdpi-decision-and-comparability.md`.
+> ratio. The rule is implemented in `app/analytics/scoring.py` and pinned by
+> `backend/tests/test_yoy_comparability.py`.
 
 ---
 

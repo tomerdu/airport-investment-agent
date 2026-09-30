@@ -9,6 +9,11 @@ I built this for the Deloitte Digital Forward Deployed Engineer exercise. The
 design in one line: **the LLM decides what to do and how to explain it;
 deterministic code decides the numbers.**
 
+**Design / Architecture: [DESIGN.md](DESIGN.md)** — the assignment's short
+design document: scoring methodology, key tradeoffs, and where/how AI is used.
+**Guided walkthrough: [DEMO.md](DEMO.md)** — the four assignment questions, and
+the deterministic fallback when the LLM is unavailable.
+
 ---
 
 ## The business problem
@@ -79,7 +84,7 @@ The frontend renders tables and scores from the structured response, never from
 the model's prose, so a chart cannot disagree with the engine.
 
 Scoring formulas, the tradeoffs behind them and the full AI boundary are in
-**[docs/design-document.md](docs/design-document.md)** — start with its
+**[DESIGN.md](DESIGN.md)** — start with its
 executive summary.
 
 ## Technology stack
@@ -295,6 +300,7 @@ retried. Detail: **[docs/api-cost-control.md](docs/api-cost-control.md)**.
 ```
 airport-investment-agent/
 ├── README.md               this file
+├── DESIGN.md               the design/architecture deliverable
 ├── DEMO.md                 guided demo walkthrough
 ├── .env.example            configuration template (no secrets)
 ├── backend/
@@ -318,12 +324,8 @@ airport-investment-agent/
 │   │   └── styles.css
 │   └── tests/voice.test.ts voice logic (node --test)
 └── docs/
-    ├── design-document.md      architecture & methodology
     ├── api-cost-control.md     which commands cost money
-    ├── scoring-proposal.md     TDPI / ACI / UDEI formulas
-    ├── data-source-research.md source verification
-    ├── feasibility-matrix.md   what is measurable vs proxied
-    ├── architecture-proposal.md
-    ├── implementation-plan.md
-    └── open-decisions.md
+    ├── scoring-proposal.md     TDPI / ACI / UDEI formula derivation
+    ├── data-source-research.md source verification and licensing
+    └── feasibility-matrix.md   what is measurable vs proxied
 ```

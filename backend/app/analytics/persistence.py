@@ -46,8 +46,8 @@ MIN_FLIGHTS_PER_MONTH = MIN_OTP_FLIGHTS_FOR_ACI // 12          # 83
 # A month is called "elevated" at or above this monthly ACI. The value matches
 # the cohort-relative sense of "high" used elsewhere in the system, but this
 # constant is deliberately separate: the diagnostic never feeds `classify()`,
-# and `evaluate_aci_persistence.py --section threshold` reports how the results
-# move at 55 and 65 so no conclusion rests on the exact figure.
+# and the raw monthly values ship alongside it so no conclusion rests on the
+# exact figure — a reader can apply their own cut.
 ELEVATED_MONTH_ACI = 60.0
 
 # Below this share of evaluable months elevated, sustained pressure is not

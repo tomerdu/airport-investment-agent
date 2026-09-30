@@ -6,7 +6,7 @@
 # or invokes, at versions verified together.
 #
 # Verified by installing into an empty virtual environment and running the full
-# offline test suite against it. See docs/phase-8.4-reproducibility.md.
+# offline test suite against it.
 #
 #     python -m venv .venv
 #     .venv\Scripts\pip install -r requirements.txt     # Windows
@@ -28,4 +28,4 @@ requests==2.32.3            # HTTP with sane retry/session handling
 openpyxl==3.1.5             # FAA enplanement workbooks (.xlsx)
 
 # --- Tests ----------------------------------------------------------------
-pytest==8.3.4               # 553-test offline suite; conftest blocks live calls
+pytest==8.3.4               # 593-test offline suite; conftest blocks live calls

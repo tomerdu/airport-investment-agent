@@ -1,8 +1,6 @@
 """Deterministic tests for conversational state.
 
-Proposed in the architecture audit (docs/agent-architecture-interview-guide.md
-section E) and implemented here. Four properties the rest of the suite exercised
-only indirectly:
+Four properties the rest of the suite exercised only indirectly:
 
   1. an ordinal follow-up ("the second one") resolves to the right airport
   2. a comparison survives intervening turns that change the focus

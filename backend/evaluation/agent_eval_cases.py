@@ -927,8 +927,8 @@ def _order_ok(text: str, codes: list[str]) -> bool:
 # Selection
 # ---------------------------------------------------------------------------
 
-# The minimal live sample, chosen in the Phase 9 static review. Each covers
-# several properties at once; see docs/phase-9-agent-evaluation.md §5.
+# The minimal live sample. Each case covers several properties at once, so six
+# cases exercise the behaviours the offline checks cannot reach.
 LIVE_IDS = (
     "C3-sea-pdx-den",        # complex comparison + two superlatives
     "S1-compare-then-drill",  # multi-turn, two chained references
